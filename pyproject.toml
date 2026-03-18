@@ -1,0 +1,47 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "TheRoyalSaving — Premium Nigerian Cooperative Savings Platform API"
+requires-python = ">=3.12"
+dependencies = [
+    # Web framework
+    "fastapi[standard]>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    # Database
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "greenlet>=3.0.0",
+    # Redis & Background Jobs
+    "redis>=5.0.0",
+    "rq>=1.16.0",
+    # Validation & Settings
+    "pydantic[email]>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    # Auth & Security
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "cryptography>=43.0.0",
+    # Rate Limiting
+    "slowapi>=0.1.9",
+    # HTTP Client
+    "httpx>=0.28.0",
+    # Email
+    "resend>=2.0.0",
+    # Cloud Storage
+    "boto3>=1.35.0",
+    "cloudinary>=1.40.0",
+    # Monitoring
+    "sentry-sdk[fastapi]>=2.0.0",
+    # Utilities
+    "python-multipart>=0.0.18",
+    "python-dotenv>=1.2.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+    "ruff>=0.8.0",
+]
