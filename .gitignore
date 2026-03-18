@@ -61,7 +61,7 @@ env.bak/
 venv.bak/
 
 # uv / packaging
-uv.lock
+# uv.lock
 
 # IDE / Editor
 .idea/
