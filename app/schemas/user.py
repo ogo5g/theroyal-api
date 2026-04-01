@@ -5,17 +5,21 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr
 
-from app.models.user import UserRole
+from app.models.user import OnboardingStep, UserRole
 
 
 class UserResponse(BaseModel):
     id: uuid.UUID
     email: EmailStr
-    phone_number: str
-    first_name: str
-    last_name: str
+    phone_number: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
     other_name: str | None = None
+    date_of_birth: str | None = None
+    address: str | None = None
+    profile_image_url: str | None = None
     role: UserRole
+    onboarding_step: OnboardingStep
     is_active: bool
     is_verified: bool
     is_suspended: bool
@@ -29,3 +33,6 @@ class UserUpdateRequest(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     other_name: str | None = None
+    phone_number: str | None = None
+    date_of_birth: str | None = None
+    address: str | None = None

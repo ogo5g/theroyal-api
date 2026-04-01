@@ -16,6 +16,7 @@ from app.schemas.auth import (
     RefreshRequest,
     RegisterRequest,
     ResetPasswordRequest,
+    SetPasswordRequest,
 )
 from app.schemas.user import UserResponse
 from app.services import auth as auth_service
@@ -41,11 +42,24 @@ async def verify_otp(
     data: OTPVerifyRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    user = await auth_service.verify_otp(data.email, data.otp, db)
+    result = await auth_service.verify_otp(data.email, data.otp, db)
     return {
         "success": True,
-        "data": UserResponse.model_validate(user).model_dump(),
-        "message": "Email verified successfully.",
+        "data": result,
+        "message": "Email verified successfully. Please set your password.",
+    }
+
+
+@router.post("/set-password")
+async def set_password(
+    data: SetPasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    tokens = await auth_service.set_password(data, db)
+    return {
+        "success": True,
+        "data": tokens,
+        "message": "Password set successfully. You are now logged in.",
     }
 
 
@@ -92,7 +106,6 @@ async def refresh(
 async def logout(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    # TODO: Pass actual token to blacklist
     await auth_service.logout_user("")
     return {
         "success": True,

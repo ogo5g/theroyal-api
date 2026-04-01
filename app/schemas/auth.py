@@ -1,7 +1,6 @@
 """Auth request/response schemas."""
 
 import re
-from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, field_validator
 
@@ -19,30 +18,11 @@ def normalize_phone(phone: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# Registration (email-only, step 1)
 # ---------------------------------------------------------------------------
 class RegisterRequest(BaseModel):
     email: EmailStr
-    phone_number: str
-    password: str
-    first_name: str
-    last_name: str
     turnstile_token: str | None = None  # Optional in dev, required in prod
-
-    @field_validator("phone_number")
-    @classmethod
-    def validate_phone(cls, v: str) -> str:
-        normalized = normalize_phone(v)
-        if not re.match(r"^\+234[0-9]{10}$", normalized):
-            raise ValueError("Invalid Nigerian phone number")
-        return normalized
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
-        return v
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +42,34 @@ class OTPVerifyRequest(BaseModel):
 
 class OTPResendRequest(BaseModel):
     email: EmailStr
+
+
+# ---------------------------------------------------------------------------
+# Set Password (step 3, after OTP)
+# ---------------------------------------------------------------------------
+class SetPasswordRequest(BaseModel):
+    token: str  # Setup token from OTP verification
+    password: str
+    confirm_password: str
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not re.search(r"[A-Z]", v):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r"[0-9]", v):
+            raise ValueError("Password must contain at least one number")
+        return v
+
+    @field_validator("confirm_password")
+    @classmethod
+    def passwords_match(cls, v: str, info) -> str:
+        password = info.data.get("password")
+        if password and v != password:
+            raise ValueError("Passwords do not match")
+        return v
 
 
 # ---------------------------------------------------------------------------
@@ -97,10 +105,19 @@ class ForgotPasswordRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str
     new_password: str
+    confirm_password: str
 
     @field_validator("new_password")
     @classmethod
     def validate_password(cls, v: str) -> str:
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
+        return v
+
+    @field_validator("confirm_password")
+    @classmethod
+    def passwords_match(cls, v: str, info) -> str:
+        password = info.data.get("new_password")
+        if password and v != password:
+            raise ValueError("Passwords do not match")
         return v

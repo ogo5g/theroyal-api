@@ -9,9 +9,11 @@ def generate_uuid() -> str:
     return str(uuid4())
 
 
-def generate_plan_code(sequence: int) -> str:
-    """Generate a plan code like PLAN-001."""
-    return f"PLAN-{sequence:03d}"
+def generate_plan_code() -> str:
+    """Generate a plan code like PLAN-A1B2C3."""
+    chars = string.ascii_uppercase + string.digits
+    suffix = "".join(secrets.choice(chars) for _ in range(6))
+    return f"PLAN-{suffix}"
 
 
 def generate_subscription_sid() -> str:
@@ -43,3 +45,7 @@ def generate_otp(length: int = 6) -> str:
 def generate_reference() -> str:
     """Generate a unique payment reference."""
     return f"TRS-{secrets.token_hex(12).upper()}"
+
+
+# Alias for backward compatibility
+generate_payment_reference = generate_reference

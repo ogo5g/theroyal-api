@@ -1,7 +1,7 @@
 """Re-export all models for Alembic auto-discovery."""
 
 from app.models.base import Base
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, OnboardingStep
 from app.models.account import Account
 from app.models.kyc import KYC, KYCStatus, DocumentType
 from app.models.wallet import WalletTransaction, TransactionType, TransactionCategory, TransactionStatus

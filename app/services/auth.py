@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.account import Account
-from app.models.user import User
-from app.schemas.auth import RegisterRequest, LoginRequest
+from app.models.user import OnboardingStep, User
+from app.schemas.auth import RegisterRequest, LoginRequest, SetPasswordRequest
 from app.utils.codes import generate_otp
 from app.utils.security import (
     create_access_token,
@@ -22,7 +22,7 @@ from app.utils.security import (
 # ---------------------------------------------------------------------------
 # In-memory OTP store (replace with Redis in production)
 # ---------------------------------------------------------------------------
-# {email: {"otp": "123456", "expires_at": datetime, "attempts": 0}}
+# {email: {"otp": "123456", "expires_at": float, "attempts": 0}}
 _otp_store: dict[str, dict] = {}
 
 OTP_EXPIRY_MINUTES = 10
@@ -30,10 +30,10 @@ OTP_MAX_ATTEMPTS = 5
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# Registration (email only)
 # ---------------------------------------------------------------------------
 async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
-    """Register a new user and send OTP."""
+    """Register a new user with email only and send OTP."""
     # Check for existing email
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
@@ -42,24 +42,11 @@ async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
             detail="A user with this email already exists",
         )
 
-    # Check for existing phone
-    existing_phone = await db.execute(
-        select(User).where(User.phone_number == data.phone_number)
-    )
-    if existing_phone.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A user with this phone number already exists",
-        )
-
-    # Create user
+    # Create user (email only — everything else comes later)
     user = User(
         email=data.email,
-        phone_number=data.phone_number,
-        hashed_password=hash_password(data.password),
-        first_name=data.first_name,
-        last_name=data.last_name,
         is_verified=False,
+        onboarding_step=OnboardingStep.REGISTERED,
     )
     db.add(user)
     await db.flush()
@@ -77,7 +64,6 @@ async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
     }
 
     # TODO: Enqueue OTP email via RQ (send_otp_email job)
-    # For now, log in development
     if not settings.is_production:
         print(f"[DEV] OTP for {data.email}: {otp}")
 
@@ -87,8 +73,8 @@ async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
 # ---------------------------------------------------------------------------
 # OTP Verification
 # ---------------------------------------------------------------------------
-async def verify_otp(email: str, otp: str, db: AsyncSession) -> User:
-    """Verify OTP and mark user as verified."""
+async def verify_otp(email: str, otp: str, db: AsyncSession) -> dict:
+    """Verify OTP, mark user as verified, and return a setup token."""
     stored = _otp_store.get(email)
     if not stored:
         raise HTTPException(
@@ -115,9 +101,10 @@ async def verify_otp(email: str, otp: str, db: AsyncSession) -> User:
 
     # Validate
     if stored["otp"] != otp:
+        remaining = OTP_MAX_ATTEMPTS - stored["attempts"]
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid OTP. {OTP_MAX_ATTEMPTS - stored['attempts']} attempts remaining.",
+            detail=f"Invalid OTP. {remaining} attempt(s) remaining.",
         )
 
     # Mark verified
@@ -127,9 +114,60 @@ async def verify_otp(email: str, otp: str, db: AsyncSession) -> User:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     user.is_verified = True
+    user.onboarding_step = OnboardingStep.EMAIL_VERIFIED
     del _otp_store[email]
 
-    return user
+    # Issue a short-lived setup token so user can proceed to set password
+    setup_token = create_access_token(
+        {"sub": str(user.id), "type": "setup"},
+    )
+
+    return {
+        "user_id": str(user.id),
+        "email": user.email,
+        "setup_token": setup_token,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Set Password (after OTP verification)
+# ---------------------------------------------------------------------------
+async def set_password(data: SetPasswordRequest, db: AsyncSession) -> dict:
+    """Set password for a newly verified user and issue login tokens."""
+    payload = decode_token(data.token)
+    if not payload or payload.get("type") != "setup":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired setup token",
+        )
+
+    user_id = payload.get("sub")
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if user.hashed_password is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password has already been set",
+        )
+
+    user.hashed_password = hash_password(data.password)
+    user.onboarding_step = OnboardingStep.PASSWORD_SET
+
+    # Issue full login tokens so the user can proceed to onboarding
+    token_data = {"sub": str(user.id), "role": user.role.value}
+    access_token = create_access_token(token_data)
+    refresh_token = create_refresh_token(token_data)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -167,7 +205,7 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
 
-    if not user or not verify_password(data.password, user.hashed_password):
+    if not user or not user.hashed_password or not verify_password(data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -200,6 +238,7 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "onboarding_step": user.onboarding_step.value,
     }
 
 
@@ -224,9 +263,6 @@ async def refresh_tokens(refresh_token: str, db: AsyncSession) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
         )
-
-    # TODO: Check Redis blacklist for old refresh token
-    # TODO: Blacklist the old refresh token in Redis
 
     token_data = {"sub": str(user.id), "role": user.role.value}
     new_access = create_access_token(token_data)
@@ -261,7 +297,6 @@ async def forgot_password(email: str, db: AsyncSession) -> None:
     if not user:
         return
 
-    # Generate a short-lived reset token (reusing JWT with custom type)
     reset_token = create_access_token({"sub": str(user.id), "type": "reset"})
 
     # TODO: Enqueue reset email via RQ
