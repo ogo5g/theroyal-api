@@ -19,14 +19,15 @@ class UserRole(str, enum.Enum):
 
 
 class OnboardingStep(str, enum.Enum):
-    REGISTERED = "registered"           # Email submitted, OTP pending
-    EMAIL_VERIFIED = "email_verified"   # OTP verified
-    PASSWORD_SET = "password_set"       # Password created
-    BASIC_INFO = "basic_info"           # Names, phone, DOB, address
-    NIN_SUBMITTED = "nin_submitted"     # NIN encrypted & saved
-    BVN_SUBMITTED = "bvn_submitted"     # BVN encrypted & saved
-    PROFILE_UPLOADED = "profile_uploaded"  # Profile photo uploaded
-    COMPLETED = "completed"             # All steps done
+    REGISTERED = "registered"             # Phone submitted, phone OTP pending
+    PHONE_VERIFIED = "phone_verified"     # Phone OTP verified
+    EMAIL_VERIFIED = "email_verified"     # Email submitted & OTP verified
+    PASSWORD_SET = "password_set"         # Password created
+    BASIC_INFO = "basic_info"             # Names, phone, DOB, address
+    NIN_SUBMITTED = "nin_submitted"       # NIN encrypted & saved
+    BVN_SUBMITTED = "bvn_submitted"       # BVN encrypted & saved
+    PROFILE_UPLOADED = "profile_uploaded" # Profile photo uploaded
+    COMPLETED = "completed"               # All steps done
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):

@@ -18,15 +18,51 @@ def normalize_phone(phone: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Registration (email-only, step 1)
+# Registration Step 1 — phone number
 # ---------------------------------------------------------------------------
 class RegisterRequest(BaseModel):
-    email: EmailStr
-    turnstile_token: str | None = None  # Optional in dev, required in prod
+    phone_number: str
+    turnstile_token: str | None = None
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        normalized = normalize_phone(v)
+        if not re.match(r"^\+234\d{10}$", normalized):
+            raise ValueError("Please provide a valid Nigerian phone number")
+        return normalized
 
 
 # ---------------------------------------------------------------------------
-# OTP
+# Phone OTP Verification (step 2 of signup)
+# ---------------------------------------------------------------------------
+class PhoneOTPVerifyRequest(BaseModel):
+    phone_number: str
+    otp: str
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        return normalize_phone(v)
+
+    @field_validator("otp")
+    @classmethod
+    def validate_otp(cls, v: str) -> str:
+        if not re.match(r"^\d{6}$", v):
+            raise ValueError("OTP must be a 6-digit number")
+        return v
+
+
+# ---------------------------------------------------------------------------
+# Registration Step 3 — submit email (after phone verified)
+# ---------------------------------------------------------------------------
+class SubmitEmailRequest(BaseModel):
+    token: str   # setup token from phone OTP verification
+    email: EmailStr
+
+
+# ---------------------------------------------------------------------------
+# Email OTP Verification (step 4 of signup)
 # ---------------------------------------------------------------------------
 class OTPVerifyRequest(BaseModel):
     email: EmailStr
@@ -41,14 +77,15 @@ class OTPVerifyRequest(BaseModel):
 
 
 class OTPResendRequest(BaseModel):
-    email: EmailStr
+    """Resend OTP — can be email or phone."""
+    identifier: str  # phone number or email
 
 
 # ---------------------------------------------------------------------------
-# Set Password (step 3, after OTP)
+# Set Password (step 5, after email OTP)
 # ---------------------------------------------------------------------------
 class SetPasswordRequest(BaseModel):
-    token: str  # Setup token from OTP verification
+    token: str  # Setup token from email OTP verification
     password: str
     confirm_password: str
 
@@ -73,12 +110,30 @@ class SetPasswordRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Login
+# Login — dual identifier (email+password OR phone→OTP)
 # ---------------------------------------------------------------------------
 class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+    identifier: str   # email address or phone number
+    password: str | None = None  # required for email login; omit for phone OTP
     turnstile_token: str | None = None
+
+
+class LoginOTPVerifyRequest(BaseModel):
+    """Verify OTP for phone-based login."""
+    phone_number: str
+    otp: str
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        return normalize_phone(v)
+
+    @field_validator("otp")
+    @classmethod
+    def validate_otp(cls, v: str) -> str:
+        if not re.match(r"^\d{6}$", v):
+            raise ValueError("OTP must be a 6-digit number")
+        return v
 
 
 # ---------------------------------------------------------------------------
