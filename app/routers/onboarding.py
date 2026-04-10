@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -76,11 +76,11 @@ async def submit_bvn(
 
 @router.post("/profile-photo")
 async def upload_profile_photo(
-    data: ProfilePhotoRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    file: UploadFile = File(...),
 ):
-    user = await onboarding_service.upload_profile_photo(current_user, data, db)
+    user = await onboarding_service.upload_profile_photo(current_user, file, db)
     return {
         "success": True,
         "data": UserResponse.model_validate(user).model_dump(),

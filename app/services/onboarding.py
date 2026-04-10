@@ -128,14 +128,18 @@ async def submit_bvn(user: User, data: BVNSubmitRequest, db: AsyncSession) -> Us
     return user
 
 
+from fastapi import UploadFile
+from app.services.storage.cloudinary import upload_image_to_cloudinary
+
 # ---------------------------------------------------------------------------
 # Step 4: Profile Photo Upload
 # ---------------------------------------------------------------------------
-async def upload_profile_photo(user: User, data: ProfilePhotoRequest, db: AsyncSession) -> User:
+async def upload_profile_photo(user: User, file: UploadFile, db: AsyncSession) -> User:
     """Save profile photo URL and complete onboarding."""
     _check_step(user, OnboardingStep.BVN_SUBMITTED)
 
-    user.profile_image_url = data.image_url
+    image_url = await upload_image_to_cloudinary(file)
+    user.profile_image_url = image_url
     user.onboarding_step = OnboardingStep.COMPLETED
 
     return user

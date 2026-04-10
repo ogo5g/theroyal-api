@@ -26,6 +26,7 @@ from app.utils.security import (
     verify_password,
 )
 from app.services.queue import WorkerPool
+from app.services.security import verify_turnstile_token
 
 # ---------------------------------------------------------------------------
 # In-memory OTP store (replace with Redis in production)
@@ -80,6 +81,9 @@ def _validate_otp(identifier: str, otp: str) -> dict:
 # ---------------------------------------------------------------------------
 async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
     """Register a new user with phone number and send phone OTP."""
+    # Bot protection
+    await verify_turnstile_token(data.turnstile_token)
+    
     existing = await db.execute(select(User).where(User.phone_number == data.phone_number))
     if existing.scalar_one_or_none():
         raise HTTPException(
@@ -269,6 +273,9 @@ async def resend_otp(identifier: str, db: AsyncSession) -> None:
 # ---------------------------------------------------------------------------
 async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
     """Authenticate user. Email identifier uses password; phone sends OTP."""
+    # Bot protection
+    await verify_turnstile_token(data.turnstile_token)
+    
     identifier = data.identifier.strip()
 
     if _is_email(identifier):

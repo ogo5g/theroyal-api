@@ -6,6 +6,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+
 from app.config import settings
 from app.database import async_session_factory, engine
 from app.models import Base
@@ -14,6 +17,15 @@ from app.routers.admin import router as admin_router
 from app.services.plans import seed_default_plans
 from app.services.queue import close_pool, init_pool
 from app.services.seed import seed_admin_user
+
+# Initialize Sentry
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        integrations=[FastApiIntegration()],
+        environment=settings.APP_ENV,
+        traces_sample_rate=1.0 if not settings.is_production else 0.1,
+    )
 
 
 @asynccontextmanager
@@ -85,10 +97,10 @@ app.include_router(admin_router, prefix=api_prefix)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Catch unhandled exceptions and return a consistent error envelope."""
-    if settings.is_production:
-        # TODO: Report to Sentry
-        pass
-    else:
+    if settings.SENTRY_DSN:
+        sentry_sdk.capture_exception(exc)
+    
+    if not settings.is_production:
         import traceback
         traceback.print_exc()
 
