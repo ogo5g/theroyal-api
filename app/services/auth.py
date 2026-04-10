@@ -25,6 +25,7 @@ from app.utils.security import (
     hash_password,
     verify_password,
 )
+from app.services.queue import WorkerPool
 
 # ---------------------------------------------------------------------------
 # In-memory OTP store (replace with Redis in production)
@@ -100,7 +101,10 @@ async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
     otp = generate_otp()
     _store_otp(data.phone_number, otp, str(user.id))
 
-    # TODO: Send SMS via Termii (enqueue via RQ)
+    msg = f"Your TheRoyalSaving security code is {otp}. It expires in 10 minutes. Do not share this code."
+    if WorkerPool.pool:
+        await WorkerPool.pool.enqueue_job("send_termii_sms_task", data.phone_number, msg)
+
     if not settings.is_production:
         print(f"[DEV] Phone OTP for {data.phone_number}: {otp}")
 
@@ -158,7 +162,20 @@ async def submit_email(data: SubmitEmailRequest, db: AsyncSession) -> None:
     otp = generate_otp()
     _store_otp(str(data.email), otp, str(user.id))
 
-    # TODO: Send email via Resend (enqueue via RQ)
+    subject = "Your TheRoyalSaving Verification Code"
+    html_body = f"""
+    <div style="font-family: sans-serif; max-w-xl mx-auto p-6 bg-white rounded shadow text-[#1E0A3C]">
+        <h2 style="color: #D4AF37;">Verification Code</h2>
+        <p>Please use the verification code below to confirm your email address.</p>
+        <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px; padding: 12px; background: #f3f4f6; text-align: center; border-radius: 8px;">
+            {otp}
+        </p>
+        <p>This code expires in 10 minutes. Do not share it with anyone.</p>
+    </div>
+    """
+    if WorkerPool.pool:
+        await WorkerPool.pool.enqueue_job("send_resend_email_task", str(data.email), subject, html_body)
+
     if not settings.is_production:
         print(f"[DEV] Email OTP for {data.email}: {otp}")
 
@@ -232,6 +249,17 @@ async def resend_otp(identifier: str, db: AsyncSession) -> None:
     otp = generate_otp()
     _store_otp(identifier, otp, str(user.id))
 
+    # Determine if phone or email and dispatch respectively
+    if _is_email(identifier):
+        subject = "Your TheRoyalSaving OTP"
+        html_body = f"<p>Your security code is <b>{otp}</b>. It expires in 10 minutes.</p>"
+        if WorkerPool.pool:
+            await WorkerPool.pool.enqueue_job("send_resend_email_task", identifier, subject, html_body)
+    else:
+        msg = f"Your TheRoyalSaving security code is {otp}. It expires in 10 minutes. Do not share this code."
+        if WorkerPool.pool:
+            await WorkerPool.pool.enqueue_job("send_termii_sms_task", identifier, msg)
+
     if not settings.is_production:
         print(f"[DEV] Resend OTP for {identifier}: {otp}")
 
@@ -286,7 +314,10 @@ async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
         otp = generate_otp()
         _store_otp(phone, otp, str(user.id))
 
-        # TODO: Send SMS via Termii
+        msg = f"Your TheRoyalSaving login code is {otp}. It expires in 10 minutes. Do not share this code."
+        if WorkerPool.pool:
+            await WorkerPool.pool.enqueue_job("send_termii_sms_task", phone, msg)
+
         if not settings.is_production:
             print(f"[DEV] Login OTP for {phone}: {otp}")
 
@@ -385,9 +416,27 @@ async def forgot_password(email: str, db: AsyncSession) -> None:
 
     reset_token = create_access_token({"sub": str(user.id), "purpose": "password_reset"}, expire_minutes=30)
 
-    # TODO: Send reset email via Resend
+    # Note: Using the actual Frontend URL for production links
+    reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+    subject = "Reset your TheRoyalSaving password"
+    html_body = f"""
+    <div style="font-family: sans-serif; max-w-xl mx-auto p-6 bg-white rounded shadow text-[#1E0A3C]">
+        <h2 style="color: #D4AF37;">Password Reset Request</h2>
+        <p>We received a request to reset your password. Click the button below to choose a new one:</p>
+        <div style="text-align: center; margin: 24px 0;">
+            <a href="{reset_url}" style="background-color: #1E0A3C; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">
+                Reset Password
+            </a>
+        </div>
+        <p>If you did not request this, you can safely ignore this email.</p>
+        <p style="font-size: 12px; color: gray;">Or use this link: {reset_url}</p>
+    </div>
+    """
+    if WorkerPool.pool:
+        await WorkerPool.pool.enqueue_job("send_resend_email_task", email, subject, html_body)
+
     if not settings.is_production:
-        print(f"[DEV] Password reset token for {email}: {reset_token}")
+        print(f"[DEV] Password reset link for {email}: {reset_url}")
 
 
 async def reset_password(token: str, new_password: str, db: AsyncSession) -> None:

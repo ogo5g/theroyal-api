@@ -20,13 +20,8 @@ async def shutdown(ctx):
     logger.info("🛑 ARQ Worker shutting down cleanly.")
 
 
-# --- Placeholder Tasks (To be moved to phases 2, 3, 4) ---
-
-async def send_welcome_email(ctx, email: str, name: str):
-    """A placeholder task to verify the worker is functioning."""
-    logger.info(f"📧 [TASK STARTED] Sending welcome email to {name} <{email}>")
-    await asyncio.sleep(2)  # Simulate network hop to Resend
-    logger.info(f"✅ [TASK DONE] Welcome email sent to {email}.")
+from app.services.notifications.email import send_resend_email_task
+from app.services.notifications.sms import send_termii_sms_task
 
 
 class WorkerSettings:
@@ -39,7 +34,10 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
 
     # Register all background tasks the worker is allowed to process here
-    functions = [send_welcome_email]
+    functions = [
+        send_resend_email_task,
+        send_termii_sms_task,
+    ]
     
     # Lifecycle hooks
     on_startup = startup

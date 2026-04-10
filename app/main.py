@@ -12,6 +12,7 @@ from app.models import Base
 from app.routers import auth, notifications, onboarding, plans, subscriptions, users, wallet, webhooks
 from app.routers.admin import router as admin_router
 from app.services.plans import seed_default_plans
+from app.services.queue import close_pool, init_pool
 from app.services.seed import seed_admin_user
 
 
@@ -26,10 +27,13 @@ async def lifespan(app: FastAPI):
     async with async_session_factory() as db:
         await seed_default_plans(db)
         await seed_admin_user(db)
+        
+    await init_pool()
 
     yield
 
-    # Shutdown: dispose engine
+    # Shutdown: dispose engine and queue connections
+    await close_pool()
     await engine.dispose()
 
 

@@ -40,7 +40,13 @@ class Settings(BaseSettings):
     # Resend
     RESEND_API_KEY: str = ""
     RESEND_FROM_EMAIL: str = "noreply@theroyalsaving.com"
-
+    
+    # SMTP Fallback
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 465
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    
     # Cloudflare R2
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""
