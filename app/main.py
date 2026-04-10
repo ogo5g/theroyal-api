@@ -12,7 +12,7 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from app.config import settings
 from app.database import async_session_factory, engine
 from app.models import Base
-from app.routers import auth, notifications, onboarding, plans, subscriptions, users, wallet, webhooks
+from app.routers import auth, notifications, onboarding, plans, subscriptions, users, wallet, webhooks, tickets
 from app.routers.admin import router as admin_router
 from app.services.plans import seed_default_plans
 from app.services.queue import close_pool, init_pool
@@ -88,6 +88,7 @@ app.include_router(plans.router, prefix=api_prefix)
 app.include_router(subscriptions.router, prefix=api_prefix)
 app.include_router(webhooks.router, prefix=api_prefix)
 app.include_router(notifications.router, prefix=api_prefix)
+app.include_router(tickets.router, prefix=api_prefix)
 app.include_router(admin_router, prefix=api_prefix)
 
 

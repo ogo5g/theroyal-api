@@ -9,6 +9,7 @@ from app.models.plan import SavingsPlan, PlanStatus, PenaltyType
 from app.models.subscription import Subscription, PaymentSchedule, SubscriptionStatus, ScheduleStatus
 from app.models.notification import Notification, NotificationType, NotificationChannel
 from app.models.audit import AuditLog
+from app.models.ticket import Ticket, TicketMessage, TicketStatus, TicketPriority
 
 __all__ = [
     "Base",
@@ -20,4 +21,5 @@ __all__ = [
     "Subscription", "PaymentSchedule", "SubscriptionStatus", "ScheduleStatus",
     "Notification", "NotificationType", "NotificationChannel",
     "AuditLog",
+    "Ticket", "TicketMessage", "TicketStatus", "TicketPriority",
 ]

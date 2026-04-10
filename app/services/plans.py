@@ -137,4 +137,7 @@ async def update_plan(code: str, data: PlanUpdateRequest, db: AsyncSession) -> S
             value = PlanStatus(value)
         setattr(plan, field, value)
 
+    await db.commit()
+    await db.refresh(plan)
+
     return plan

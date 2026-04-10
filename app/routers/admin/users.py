@@ -78,10 +78,60 @@ async def get_user(
     admin: Annotated[User, Depends(admin_dep)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    from sqlalchemy.orm import selectinload
+    from app.models.account import Account
+    from app.models.kyc import KYC
+    from app.models.subscription import UserSubscription
+
+    # Query user with eagerly loaded relationships or manual side queries depending on model structure.
+    # Since we might not have pure relationships configured on the User model for all these,
+    # let's just do individual queries which is safe and performant enough for admin detail views.
+    
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         return {"success": False, "error": "not_found", "message": "User not found"}
+
+    # Fetch supplementary data
+    account_res = await db.execute(select(Account).where(Account.user_id == user_id))
+    account = account_res.scalar_one_or_none()
+
+    kyc_res = await db.execute(select(KYC).where(KYC.user_id == user_id))
+    kyc = kyc_res.scalar_one_or_none()
+
+    subs_res = await db.execute(select(UserSubscription).where(UserSubscription.user_id == user_id))
+    subscriptions = subs_res.scalars().all()
+
+    # Format the supplementary data
+    account_data = None
+    if account:
+        account_data = {
+            "wallet_balance": float(account.wallet_balance),
+            "total_saved": float(account.total_saved),
+            "total_withdrawn": float(account.total_withdrawn),
+            "virtual_account": account.virtual_account_number,
+            "bank_name": account.virtual_account_bank,
+        }
+
+    kyc_data = None
+    if kyc:
+        kyc_data = {
+            "status": kyc.status.value if kyc.status else "pending",
+            "document_type": kyc.document_type,
+            "submitted_at": kyc.submitted_at.isoformat() if kyc.submitted_at else None,
+            "review_notes": kyc.review_notes,
+        }
+        
+    subs_data = [
+        {
+            "id": str(s.id),
+            "sid": s.sid,
+            "plan_code": s.plan_code,
+            "status": s.status.value,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+        }
+        for s in subscriptions
+    ]
 
     return {
         "success": True,
@@ -97,6 +147,10 @@ async def get_user(
             "is_suspended": user.is_suspended,
             "onboarding_step": user.onboarding_step.value if user.onboarding_step else None,
             "created_at": user.created_at.isoformat() if user.created_at else None,
+            "account": account_data,
+            "kyc": kyc_data,
+            "recent_subscriptions": subs_data[:5], # Send 5 most recent
+            "total_subscriptions": len(subscriptions)
         },
         "message": "User retrieved.",
     }
