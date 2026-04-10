@@ -20,8 +20,8 @@ async def shutdown(ctx):
     logger.info("🛑 ARQ Worker shutting down cleanly.")
 
 
-from app.services.notifications.email import send_resend_email_task
-from app.services.notifications.sms import send_termii_sms_task
+from app.services.notifiers.email import send_resend_email_task
+from app.services.notifiers.sms import send_termii_sms_task
 
 
 class WorkerSettings:
