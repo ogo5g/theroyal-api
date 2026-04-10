@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import get_current_active_user
+from app.dependencies import get_current_user
 from app.models.user import User
 from app.schemas.ticket import TicketCreate, TicketMessageCreate, TicketResponse, TicketMessageResponse
 from app.services import ticket as ticket_service
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/tickets", tags=["Support Tickets"])
 @router.post("")
 async def create_ticket(
     data: TicketCreate,
-    user: Annotated[User, Depends(get_current_active_user)],
+    user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     request: Request = None,
 ):
@@ -45,7 +45,7 @@ async def create_ticket(
 
 @router.get("")
 async def list_my_tickets(
-    user: Annotated[User, Depends(get_current_active_user)],
+    user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
@@ -60,7 +60,7 @@ async def list_my_tickets(
 @router.get("/{ticket_id}")
 async def get_ticket(
     ticket_id: uuid.UUID,
-    user: Annotated[User, Depends(get_current_active_user)],
+    user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Get ticket details including all messages."""
@@ -75,7 +75,7 @@ async def get_ticket(
 async def add_ticket_message(
     ticket_id: uuid.UUID,
     data: TicketMessageCreate,
-    user: Annotated[User, Depends(get_current_active_user)],
+    user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Reply to a ticket."""
