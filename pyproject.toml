@@ -14,7 +14,6 @@ dependencies = [
     "greenlet>=3.0.0",
     # Redis & Background Jobs
     "redis>=5.0.0",
-    "rq>=1.16.0",
     # Validation & Settings
     "pydantic[email]>=2.0.0",
     "pydantic-settings>=2.0.0",
@@ -37,6 +36,7 @@ dependencies = [
     # Utilities
     "python-multipart>=0.0.18",
     "python-dotenv>=1.2.2",
+    "arq>=0.27.0",
 ]
 
 [dependency-groups]
