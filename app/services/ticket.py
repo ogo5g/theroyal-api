@@ -9,7 +9,6 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ticket import Ticket, TicketMessage, TicketStatus
-from app.models.user import User
 from app.schemas.ticket import TicketCreate, TicketMessageCreate, TicketUpdateStatus
 from app.services import notifications as notify_service
 

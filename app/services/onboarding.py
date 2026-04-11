@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import OnboardingStep, User
 from app.models.kyc import KYC
-from app.schemas.onboarding import BasicInfoRequest, NINSubmitRequest, BVNSubmitRequest, ProfilePhotoRequest
+from app.schemas.onboarding import BasicInfoRequest, NINSubmitRequest, BVNSubmitRequest
 from app.utils.security import encrypt_field
 
 

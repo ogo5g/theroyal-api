@@ -12,13 +12,14 @@ async def send_termii_sms_task(ctx, to_phone: str, message: str):
     """
     ARQ background task to send an SMS via Termii.
     """
+    base_url = "https://v3.api.termii.com"
     if not settings.TERMII_API_KEY:
         logger.warning(f"[STUB] Missing TERMII_API_KEY. Would send to {to_phone}: {message}")
         return
 
     logger.info(f"Sending SMS to {to_phone}...")
     
-    url = "https://api.ng.termii.com/api/sms/send"
+    url = f"{base_url}/api/sms/send"
     payload = {
         "to": to_phone,
         "from": settings.TERMII_SENDER_ID,

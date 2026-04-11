@@ -2,7 +2,6 @@
 
 import logging
 from typing import Optional
-from typing import BinaryIO
 
 import boto3
 from botocore.exceptions import ClientError

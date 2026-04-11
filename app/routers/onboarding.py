@@ -12,7 +12,6 @@ from app.schemas.onboarding import (
     BasicInfoRequest,
     BVNSubmitRequest,
     NINSubmitRequest,
-    ProfilePhotoRequest,
 )
 from app.schemas.user import UserResponse
 from app.services import onboarding as onboarding_service

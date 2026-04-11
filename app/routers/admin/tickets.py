@@ -36,9 +36,16 @@ async def list_all_tickets(
         dump["user_name"] = t.user.first_name if hasattr(t, "user") and t.user else None
         items.append(dump)
         
-    results["items"] = items
-    results["success"] = True
-    return results
+    return {
+        "success": True,
+        "data": items,
+        "pagination": {
+            "page": results["page"],
+            "per_page": results["per_page"],
+            "total": results["total"],
+            "pages": results["pages"],
+        }
+    }
 
 
 @router.get("/{ticket_id}")

@@ -78,10 +78,9 @@ async def get_user(
     admin: Annotated[User, Depends(admin_dep)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    from sqlalchemy.orm import selectinload
     from app.models.account import Account
     from app.models.kyc import KYC
-    from app.models.subscription import UserSubscription
+    from app.models.subscription import Subscription
 
     # Query user with eagerly loaded relationships or manual side queries depending on model structure.
     # Since we might not have pure relationships configured on the User model for all these,
@@ -99,7 +98,7 @@ async def get_user(
     kyc_res = await db.execute(select(KYC).where(KYC.user_id == user_id))
     kyc = kyc_res.scalar_one_or_none()
 
-    subs_res = await db.execute(select(UserSubscription).where(UserSubscription.user_id == user_id))
+    subs_res = await db.execute(select(Subscription).where(Subscription.user_id == user_id))
     subscriptions = subs_res.scalars().all()
 
     # Format the supplementary data
@@ -126,7 +125,7 @@ async def get_user(
         {
             "id": str(s.id),
             "sid": s.sid,
-            "plan_code": s.plan_code,
+            "plan_code": s.plan_id,
             "status": s.status.value,
             "created_at": s.created_at.isoformat() if s.created_at else None,
         }
@@ -141,6 +140,7 @@ async def get_user(
             "first_name": user.first_name,
             "last_name": user.last_name,
             "phone_number": user.phone_number,
+            "profile_image_url": user.profile_image_url if hasattr(user, "profile_image_url") else None,
             "role": user.role.value,
             "is_active": user.is_active,
             "is_verified": user.is_verified,

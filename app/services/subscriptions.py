@@ -1,10 +1,9 @@
 """Subscription business logic — create, list, pay, penalty."""
 
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account

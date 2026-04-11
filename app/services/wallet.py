@@ -15,7 +15,6 @@ from app.models.wallet import (
     WalletTransaction,
 )
 from app.services.payments.platnova import platnova
-from app.utils.codes import generate_payment_reference
 
 
 # ---------------------------------------------------------------------------

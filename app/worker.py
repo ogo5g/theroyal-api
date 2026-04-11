@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from arq.connections import RedisSettings
 

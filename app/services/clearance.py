@@ -1,6 +1,5 @@
 """Clearance business logic — completion check + payout."""
 
-from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
