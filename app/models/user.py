@@ -31,7 +31,7 @@ class OnboardingStep(str, enum.Enum):
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
-    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
     phone_number: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True, index=True)
     hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
