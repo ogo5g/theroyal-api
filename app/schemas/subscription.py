@@ -30,7 +30,10 @@ class SubscriptionResponse(BaseModel):
     end_date: date
     last_payment_date: date | None = None
     next_due_date: date | None = None
-    referral_code: str
+    referral_code: str | None = None         # None when not yet available
+    referral_code_available_at: date | None = None
+    referral_code_expires_at: date | None = None
+    is_referral_code_active: bool = False
     commission_paid: bool
     penalty_count: int
     created_at: datetime
@@ -48,3 +51,19 @@ class ScheduleItemResponse(BaseModel):
     transaction_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
+
+
+class DownlineStatusResponse(BaseModel):
+    sid: str
+    weeks_paid: int
+    qualification_week: int
+    is_qualified: bool
+    status: str
+
+
+class ReferralInfoResponse(BaseModel):
+    referral_code: str | None
+    available_at: date | None
+    expires_at: date | None
+    is_active: bool
+    downlines: list[DownlineStatusResponse] = []

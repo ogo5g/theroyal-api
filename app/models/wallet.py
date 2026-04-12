@@ -19,9 +19,12 @@ class TransactionType(str, enum.Enum):
 
 class TransactionCategory(str, enum.Enum):
     WALLET_FUNDING = "wallet_funding"
-    PLAN_COMMISSION = "plan_commission"
+    PLAN_COMMISSION = "plan_commission"      # legacy — kept for existing rows
+    REGISTRATION_FEE = "registration_fee"   # replaces plan_commission for new subscriptions
     PLAN_INSTALLMENT = "plan_installment"
     PENALTY_FEE = "penalty_fee"
+    REFERRAL_BONUS = "referral_bonus"
+    CLEARANCE_FEE = "clearance_fee"
     PAYOUT = "payout"
     REFUND = "refund"
     REVERSAL = "reversal"

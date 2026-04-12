@@ -61,6 +61,8 @@ class Subscription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     referral_code: Mapped[str] = mapped_column(
         String(20), unique=True, nullable=False, default=generate_referral_code
     )
+    referral_code_available_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    referral_code_expires_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     referred_by_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     upline_subscription_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subscriptions.id"), nullable=True
@@ -73,7 +75,19 @@ class Subscription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     user = relationship("User", back_populates="subscriptions")
     plan = relationship("SavingsPlan", back_populates="subscriptions")
     schedule = relationship("PaymentSchedule", back_populates="subscription", lazy="selectin")
-    upline = relationship("Subscription", remote_side="Subscription.id", lazy="selectin")
+    upline = relationship(
+        "Subscription",
+        remote_side="Subscription.id",
+        back_populates="downlines",
+        foreign_keys=[upline_subscription_id],
+        lazy="selectin",
+    )
+    downlines = relationship(
+        "Subscription",
+        back_populates="upline",
+        foreign_keys=[upline_subscription_id],
+        lazy="selectin",
+    )
 
 
 class PaymentSchedule(UUIDPrimaryKeyMixin, Base):

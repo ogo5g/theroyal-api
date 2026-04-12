@@ -22,6 +22,11 @@ class PenaltyType(str, enum.Enum):
     PERCENTAGE = "percentage"
 
 
+class BonusType(str, enum.Enum):
+    FIXED = "fixed"
+    PERCENTAGE = "percentage"
+
+
 class SavingsPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "savings_plans"
 
@@ -30,7 +35,10 @@ class SavingsPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     weekly_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     duration_weeks: Mapped[int] = mapped_column(Integer, nullable=False)
-    start_commission: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    registration_fee: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    clearance_fee: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), default=Decimal("0.00"), nullable=False
+    )
     return_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     penalty_type: Mapped[PenaltyType] = mapped_column(Enum(PenaltyType), nullable=False)
     penalty_value: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
@@ -41,6 +49,19 @@ class SavingsPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     current_subscribers: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[PlanStatus] = mapped_column(
         Enum(PlanStatus), default=PlanStatus.ACTIVE, nullable=False
+    )
+    # Referral settings
+    referral_code_release_week: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    referral_code_validity_weeks: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    downline_qualification_week: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    referral_bonus_type: Mapped[BonusType] = mapped_column(
+        Enum(BonusType, name="bonustype"), default=BonusType.FIXED, nullable=False
+    )
+    referral_bonus_value: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), default=Decimal("0.00"), nullable=False
+    )
+    referral_required_for_payout: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
     )
     is_seeded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_by: Mapped[uuid.UUID] = mapped_column(

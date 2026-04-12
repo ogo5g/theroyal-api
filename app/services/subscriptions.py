@@ -1,13 +1,14 @@
 """Subscription business logic — create, list, pay, penalty."""
 
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
-from app.models.plan import PlanStatus, SavingsPlan
+from app.models.plan import BonusType, PlanStatus, SavingsPlan
 from app.models.subscription import (
     PaymentSchedule,
     ScheduleStatus,
@@ -28,16 +29,6 @@ async def create_subscription(
     referral_code: str | None,
     db: AsyncSession,
 ) -> Subscription:
-    """
-    Create a new subscription:
-    1. Validate plan is active and not full
-    2. Check wallet >= minimum_wallet_balance
-    3. Debit start_commission from wallet
-    4. Create Subscription (ACTIVE)
-    5. Generate payment schedule rows
-    6. Increment plan.current_subscribers
-    7. Link referral if provided
-    """
     # 1. Get plan
     result = await db.execute(
         select(SavingsPlan).where(SavingsPlan.code == plan_code)
@@ -71,14 +62,14 @@ async def create_subscription(
                    f"Your balance: ₦{account.wallet_balance:,.2f}",
         )
 
-    # 3. Debit commission
-    commission_ref = generate_payment_reference()
+    # 3. Debit registration fee
+    reg_ref = generate_payment_reference()
     await wallet_service.debit_wallet(
         user_id=user.id,
-        amount=plan.start_commission,
-        category=TransactionCategory.PLAN_COMMISSION,
-        reference=commission_ref,
-        description=f"Start commission for {plan.name} plan (₦{plan.start_commission:,.2f})",
+        amount=plan.registration_fee,
+        category=TransactionCategory.REGISTRATION_FEE,
+        reference=reg_ref,
+        description=f"Registration fee for {plan.name} (₦{plan.registration_fee:,.2f})",
         db=db,
     )
 
@@ -89,7 +80,11 @@ async def create_subscription(
     total_expected = plan.weekly_amount * plan.duration_weeks
     settlement_amount = total_expected * (1 + plan.return_rate / 100)
 
-    # 5. Handle referral
+    # 5. Compute referral code availability window
+    referral_code_available_at = start_date + timedelta(weeks=plan.referral_code_release_week - 1)
+    referral_code_expires_at = referral_code_available_at + timedelta(weeks=plan.referral_code_validity_weeks)
+
+    # 6. Handle referral — validate timing and link upline
     upline_sub_id = None
     if referral_code:
         ref_result = await db.execute(
@@ -100,9 +95,26 @@ async def create_subscription(
         )
         upline_sub = ref_result.scalar_one_or_none()
         if upline_sub:
+            today_check = date.today()
+            if (
+                upline_sub.referral_code_available_at
+                and today_check < upline_sub.referral_code_available_at
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This referral code is not yet active",
+                )
+            if (
+                upline_sub.referral_code_expires_at
+                and today_check > upline_sub.referral_code_expires_at
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This referral code has expired",
+                )
             upline_sub_id = upline_sub.id
 
-    # 6. Create subscription
+    # 7. Create subscription
     subscription = Subscription(
         user_id=user.id,
         plan_id=plan.id,
@@ -113,6 +125,8 @@ async def create_subscription(
         start_date=start_date,
         end_date=end_date,
         next_due_date=start_date,
+        referral_code_available_at=referral_code_available_at,
+        referral_code_expires_at=referral_code_expires_at,
         referred_by_code=referral_code,
         upline_subscription_id=upline_sub_id,
         commission_paid=True,
@@ -120,7 +134,7 @@ async def create_subscription(
     db.add(subscription)
     await db.flush()
 
-    # 7. Generate payment schedule
+    # 8. Generate payment schedule
     for week in range(1, plan.duration_weeks + 1):
         due = start_date + timedelta(weeks=week - 1)
         schedule = PaymentSchedule(
@@ -131,7 +145,7 @@ async def create_subscription(
         )
         db.add(schedule)
 
-    # 8. Increment subscriber count
+    # 9. Increment subscriber count
     plan.current_subscribers += 1
 
     return subscription
@@ -176,13 +190,7 @@ async def get_schedule(user, sid: str, db: AsyncSession) -> list[PaymentSchedule
 # Pay Installment
 # ---------------------------------------------------------------------------
 async def pay_installment(user, sid: str, db: AsyncSession) -> dict:
-    """
-    Pay the next pending installment:
-    1. Find next PENDING schedule row
-    2. Debit weekly_amount from wallet
-    3. Mark schedule as PAID
-    4. Update subscription totals
-    """
+    """Pay the next pending installment."""
     sub = await get_subscription(user, sid, db)
 
     if sub.status not in (SubscriptionStatus.ACTIVE,):
@@ -249,6 +257,9 @@ async def pay_installment(user, sid: str, db: AsyncSession) -> dict:
     if sub.weeks_paid >= sub.total_expected / sub.weekly_amount:
         sub.status = SubscriptionStatus.COMPLETED
 
+    # Trigger upline referral bonus if downline hits qualification week
+    await _maybe_credit_upline_bonus(sub, db)
+
     return {
         "subscription": sub,
         "schedule": schedule,
@@ -256,17 +267,53 @@ async def pay_installment(user, sid: str, db: AsyncSession) -> dict:
     }
 
 
+async def _maybe_credit_upline_bonus(sub: Subscription, db: AsyncSession) -> None:
+    """Credit the upline's referral bonus when this subscription reaches the qualification week."""
+    if not sub.upline_subscription_id:
+        return
+
+    # Load the plan to get the qualification week and bonus settings
+    plan_result = await db.execute(
+        select(SavingsPlan).where(SavingsPlan.id == sub.plan_id)
+    )
+    plan = plan_result.scalar_one_or_none()
+    if not plan or sub.weeks_paid != plan.downline_qualification_week:
+        return
+
+    upline_result = await db.execute(
+        select(Subscription).where(Subscription.id == sub.upline_subscription_id)
+    )
+    upline_sub = upline_result.scalar_one_or_none()
+    if not upline_sub or upline_sub.status not in (
+        SubscriptionStatus.ACTIVE, SubscriptionStatus.COMPLETED
+    ):
+        return
+
+    if plan.referral_bonus_type == BonusType.FIXED:
+        bonus = plan.referral_bonus_value
+    else:
+        # Percentage of the downline's total plan value
+        bonus = sub.total_expected * (plan.referral_bonus_value / Decimal("100"))
+
+    if bonus <= Decimal("0"):
+        return
+
+    bonus_ref = generate_payment_reference()
+    await wallet_service.credit_wallet(
+        user_id=upline_sub.user_id,
+        amount=bonus,
+        category=TransactionCategory.REFERRAL_BONUS,
+        reference=bonus_ref,
+        description=f"Referral bonus: {sub.sid} reached week {plan.downline_qualification_week}",
+        db=db,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pay Penalty
 # ---------------------------------------------------------------------------
 async def pay_penalty(user, sid: str, db: AsyncSession) -> dict:
-    """
-    Pay penalty to reactivate a defaulted subscription:
-    1. Validate subscription is DEFAULTED
-    2. Calculate penalty amount
-    3. Debit from wallet
-    4. Reset status to ACTIVE, reset streak
-    """
+    """Pay penalty to reactivate a defaulted subscription."""
     sub = await get_subscription(user, sid, db)
 
     if sub.status != SubscriptionStatus.DEFAULTED:
@@ -283,12 +330,11 @@ async def pay_penalty(user, sid: str, db: AsyncSession) -> dict:
     if not plan:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
 
-    # Calculate penalty
     from app.models.plan import PenaltyType
     if plan.penalty_type == PenaltyType.FIXED:
         penalty_amount = plan.penalty_value
     else:
-        penalty_amount = sub.weekly_amount * (plan.penalty_value / 100)
+        penalty_amount = sub.weekly_amount * (plan.penalty_value / Decimal("100"))
 
     # Debit penalty
     ref = generate_payment_reference()
