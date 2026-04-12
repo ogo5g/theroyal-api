@@ -54,25 +54,23 @@ async def send_resend_email_task(ctx, to_email: str, subject: str, html_body: st
     """
     logger.info(f"Attempting to send email '{subject}' to {to_email}...")
     
-    # 1. Provide a quick fallback if Resend is explicitly missing
-    if not settings.RESEND_API_KEY:
-        logger.info("RESEND_API_KEY missing. Diverting to SMTP Fallback immediately.")
-        send_smtp_email(to_email, subject, html_body)
-        return
+    # 1. Try Resend API if key is available
+    if settings.RESEND_API_KEY:
+        try:
+            params = {
+                "from": settings.RESEND_FROM_EMAIL,
+                "to": [to_email],
+                "subject": subject,
+                "html": html_body,
+            }
+            email = resend.Emails.send(params)
+            logger.info(f"✅ Email sent via Resend. ID: {email.get('id')}")
+            return email
+        except Exception as e:
+            logger.warning(f"⚠️ Resend failed ({e}). Falling back to SMTP...")
 
-    # 2. Try Resend API
+    # 2. SMTP fallback
     try:
-        params = {
-            "from": settings.RESEND_FROM_EMAIL,
-            "to": [to_email],
-            "subject": subject,
-            "html": html_body,
-        }
-        
-        email = resend.Emails.send(params)
-        logger.info(f"✅ Email sent successfully via Resend. ID: {email.get('id')}")
-        return email
-        
-    except Exception as e:
-        logger.warning(f"⚠️ Resend failed ({e}). Falling back to SMTP...")
         send_smtp_email(to_email, subject, html_body)
+    except Exception as e:
+        logger.error(f"❌ All email channels failed for {to_email}. Error: {e}")

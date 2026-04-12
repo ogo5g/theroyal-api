@@ -1,4 +1,4 @@
-"""Auth business logic — register (phone), OTP, login, JWT, password reset."""
+"""Auth business logic — register (email-first), OTP, login, JWT, password reset."""
 
 from datetime import datetime, timezone
 import re
@@ -12,10 +12,10 @@ from app.models.account import Account
 from app.models.user import OnboardingStep, User
 from app.schemas.auth import (
     LoginRequest,
-    PhoneOTPVerifyRequest,
     RegisterRequest,
     SetPasswordRequest,
-    SubmitEmailRequest,
+    SubmitPhoneRequest,
+    normalize_phone,
 )
 from app.utils.codes import generate_otp
 from app.utils.security import (
@@ -30,7 +30,6 @@ from app.services.security import verify_turnstile_token
 
 # ---------------------------------------------------------------------------
 # In-memory OTP store (replace with Redis in production)
-# Keys are phone numbers (for signup/login) or emails (for email OTP).
 # {identifier: {"otp": "123456", "expires_at": float, "attempts": 0, "user_id": str|None}}
 # ---------------------------------------------------------------------------
 _otp_store: dict[str, dict] = {}
@@ -76,100 +75,12 @@ def _validate_otp(identifier: str, otp: str) -> dict:
     return entry
 
 
-# ---------------------------------------------------------------------------
-# Registration Step 1 — phone number → send phone OTP
-# ---------------------------------------------------------------------------
-async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
-    """Register a new user with phone number and send phone OTP."""
-    # Bot protection
-    await verify_turnstile_token(data.turnstile_token)
-    
-    existing = await db.execute(select(User).where(User.phone_number == data.phone_number))
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A user with this phone number already exists",
-        )
-
-    user = User(
-        phone_number=data.phone_number,
-        is_verified=False,
-        onboarding_step=OnboardingStep.REGISTERED,
-    )
-    db.add(user)
-    await db.flush()
-
-    account = Account(user_id=user.id)
-    db.add(account)
-
-    otp = generate_otp()
-    _store_otp(data.phone_number, otp, str(user.id))
-
-    msg = f"Your TheRoyalSaving security code is {otp}. It expires in 10 minutes. Do not share this code."
-    if WorkerPool.pool:
-        await WorkerPool.pool.enqueue_job("send_termii_sms_task", data.phone_number, msg)
-
-    if not settings.is_production:
-        print(f"[DEV] Phone OTP for {data.phone_number}: {otp}")
-
-    await db.commit()
-    return user
-
-
-# ---------------------------------------------------------------------------
-# Registration Step 2 — verify phone OTP → return setup token
-# ---------------------------------------------------------------------------
-async def verify_phone_otp(data: PhoneOTPVerifyRequest, db: AsyncSession) -> dict:
-    """Verify phone OTP and return a setup token for the next steps."""
-    entry = _validate_otp(data.phone_number, data.otp)
-
-    result = await db.execute(select(User).where(User.phone_number == data.phone_number))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    user.onboarding_step = OnboardingStep.PHONE_VERIFIED
-    await db.commit()
-
-    # Issue a temporary setup token (same mechanism as email OTP step)
-    setup_token = create_access_token(
-        {"sub": str(user.id), "purpose": "phone_verified"},
-        expire_minutes=30,
-    )
-    return {"setup_token": setup_token}
-
-
-# ---------------------------------------------------------------------------
-# Registration Step 3 — submit email (after phone verified)
-# ---------------------------------------------------------------------------
-async def submit_email(data: SubmitEmailRequest, db: AsyncSession) -> None:
-    """Accept user's email, send email OTP."""
-    # Decode setup token
-    payload = decode_token(data.token)
-    if not payload or payload.get("purpose") != "phone_verified":
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired setup token")
-
-    user_id = payload.get("sub")
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    # Check email not already taken
-    existing = await db.execute(select(User).where(User.email == str(data.email), User.id != user.id))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A user with this email already exists")
-
-    user.email = str(data.email)
-    await db.commit()
-
-    otp = generate_otp()
-    _store_otp(str(data.email), otp, str(user.id))
-
+def _send_email_otp(email: str, otp: str) -> None:
+    """Enqueue an email OTP via the worker pool."""
     subject = "Your TheRoyalSaving Verification Code"
     html_body = f"""
-    <div style="font-family: sans-serif; max-w-xl mx-auto p-6 bg-white rounded shadow text-[#1E0A3C]">
-        <h2 style="color: #D4AF37;">Verification Code</h2>
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
+        <h2 style="color: #D4AF37; margin-top: 0;">Verification Code</h2>
         <p>Please use the verification code below to confirm your email address.</p>
         <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px; padding: 12px; background: #f3f4f6; text-align: center; border-radius: 8px;">
             {otp}
@@ -178,14 +89,76 @@ async def submit_email(data: SubmitEmailRequest, db: AsyncSession) -> None:
     </div>
     """
     if WorkerPool.pool:
-        await WorkerPool.pool.enqueue_job("send_resend_email_task", str(data.email), subject, html_body)
-
-    if not settings.is_production:
-        print(f"[DEV] Email OTP for {data.email}: {otp}")
+        import asyncio
+        asyncio.ensure_future(
+            WorkerPool.pool.enqueue_job("send_resend_email_task", email, subject, html_body)
+        )
 
 
 # ---------------------------------------------------------------------------
-# Registration Step 4 — verify email OTP → return setup token for set-password
+# Registration Step 1 — email → send email OTP
+# ---------------------------------------------------------------------------
+async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
+    """Register a new user with email and send email OTP.
+
+    Re-entrant: if a partial registration exists (no password set), the record
+    is reset so the user can restart the flow cleanly.
+    """
+    await verify_turnstile_token(data.turnstile_token)
+
+    email = str(data.email)
+    result = await db.execute(select(User).where(User.email == email))
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        if existing.hashed_password is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An account with this email already exists. Please log in.",
+            )
+        # Incomplete registration — reset and let them start over
+        existing.phone_number = None
+        existing.is_verified = False
+        existing.onboarding_step = OnboardingStep.REGISTERED
+        user = existing
+    else:
+        user = User(
+            email=email,
+            is_verified=False,
+            onboarding_step=OnboardingStep.REGISTERED,
+        )
+        db.add(user)
+        await db.flush()
+
+        account = Account(user_id=user.id)
+        db.add(account)
+
+    otp = generate_otp()
+    _store_otp(email, otp, str(user.id))
+
+    subject = "Your TheRoyalSaving Verification Code"
+    html_body = f"""
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
+        <h2 style="color: #D4AF37; margin-top: 0;">Verification Code</h2>
+        <p>Please use the verification code below to confirm your email address.</p>
+        <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px; padding: 12px; background: #f3f4f6; text-align: center; border-radius: 8px;">
+            {otp}
+        </p>
+        <p>This code expires in 10 minutes. Do not share it with anyone.</p>
+    </div>
+    """
+    if WorkerPool.pool:
+        await WorkerPool.pool.enqueue_job("send_resend_email_task", email, subject, html_body)
+
+    if not settings.is_production:
+        print(f"[DEV] Email OTP for {email}: {otp}")
+
+    await db.commit()
+    return user
+
+
+# ---------------------------------------------------------------------------
+# Registration Step 2 — verify email OTP
 # ---------------------------------------------------------------------------
 async def verify_otp(email: str, otp: str, db: AsyncSession) -> dict:
     """Verify email OTP, mark user as verified, return setup token."""
@@ -208,12 +181,45 @@ async def verify_otp(email: str, otp: str, db: AsyncSession) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Registration Step 5 — set password
+# Registration Step 3 — submit phone number (no OTP, just collect)
+# ---------------------------------------------------------------------------
+async def submit_phone(data: SubmitPhoneRequest, db: AsyncSession) -> dict:
+    """Collect user's phone number after email verification. No SMS OTP."""
+    payload = decode_token(data.token)
+    if not payload or payload.get("purpose") != "email_verified":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired setup token")
+
+    user_id = payload.get("sub")
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Check phone not already taken by another user
+    existing = await db.execute(
+        select(User).where(User.phone_number == data.phone_number, User.id != user.id)
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A user with this phone number already exists")
+
+    user.phone_number = data.phone_number
+    user.onboarding_step = OnboardingStep.PHONE_VERIFIED  # phone collected (verification deferred until Termii KYC complete)
+    await db.commit()
+
+    setup_token = create_access_token(
+        {"sub": str(user.id), "purpose": "phone_collected"},
+        expire_minutes=30,
+    )
+    return {"setup_token": setup_token}
+
+
+# ---------------------------------------------------------------------------
+# Registration Step 4 — set password
 # ---------------------------------------------------------------------------
 async def set_password(data: SetPasswordRequest, db: AsyncSession) -> dict:
     """Set password for a newly verified user and issue login tokens."""
     payload = decode_token(data.token)
-    if not payload or payload.get("purpose") != "email_verified":
+    if not payload or payload.get("purpose") != "phone_collected":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired setup token")
 
     user_id = payload.get("sub")
@@ -237,15 +243,11 @@ async def set_password(data: SetPasswordRequest, db: AsyncSession) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Resend OTP — phone or email
+# Resend OTP — email only (phone OTP deferred until Termii KYC complete)
 # ---------------------------------------------------------------------------
 async def resend_otp(identifier: str, db: AsyncSession) -> None:
-    """Resend OTP to a user's phone or email."""
-    if _is_email(identifier):
-        result = await db.execute(select(User).where(User.email == identifier))
-    else:
-        result = await db.execute(select(User).where(User.phone_number == identifier))
-
+    """Resend OTP to a user's email."""
+    result = await db.execute(select(User).where(User.email == identifier))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -253,99 +255,46 @@ async def resend_otp(identifier: str, db: AsyncSession) -> None:
     otp = generate_otp()
     _store_otp(identifier, otp, str(user.id))
 
-    # Determine if phone or email and dispatch respectively
-    if _is_email(identifier):
-        subject = "Your TheRoyalSaving OTP"
-        html_body = f"<p>Your security code is <b>{otp}</b>. It expires in 10 minutes.</p>"
-        if WorkerPool.pool:
-            await WorkerPool.pool.enqueue_job("send_resend_email_task", identifier, subject, html_body)
-    else:
-        msg = f"Your TheRoyalSaving security code is {otp}. It expires in 10 minutes. Do not share this code."
-        if WorkerPool.pool:
-            await WorkerPool.pool.enqueue_job("send_termii_sms_task", identifier, msg)
+    subject = "Your TheRoyalSaving Verification Code"
+    html_body = f"""
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
+        <h2 style="color: #D4AF37; margin-top: 0;">Verification Code</h2>
+        <p>Your new security code is below.</p>
+        <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px; padding: 12px; background: #f3f4f6; text-align: center; border-radius: 8px;">
+            {otp}
+        </p>
+        <p>This code expires in 10 minutes. Do not share it with anyone.</p>
+    </div>
+    """
+    if WorkerPool.pool:
+        await WorkerPool.pool.enqueue_job("send_resend_email_task", identifier, subject, html_body)
 
     if not settings.is_production:
         print(f"[DEV] Resend OTP for {identifier}: {otp}")
 
 
 # ---------------------------------------------------------------------------
-# Login — email+password OR phone→OTP
+# Login — email or phone, always with password
 # ---------------------------------------------------------------------------
 async def login_user(data: LoginRequest, db: AsyncSession) -> dict:
-    """Authenticate user. Email identifier uses password; phone sends OTP."""
-    # Bot protection
+    """Authenticate user with (email or phone) + password."""
     await verify_turnstile_token(data.turnstile_token)
-    
+
     identifier = data.identifier.strip()
 
     if _is_email(identifier):
-        # Email + password login
-        if not data.password:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Password is required for email login",
-            )
-
         result = await db.execute(select(User).where(User.email == identifier))
-        user = result.scalar_one_or_none()
-
-        if not user or not user.hashed_password or not verify_password(data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid email or password",
-            )
-
-        _check_user_status(user)
-
-        token_data = {"sub": str(user.id), "role": user.role.value}
-        return {
-            "access_token": create_access_token(token_data),
-            "refresh_token": create_refresh_token(token_data),
-            "token_type": "bearer",
-            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-            "onboarding_step": user.onboarding_step.value,
-            "requires_otp": False,
-        }
     else:
-        # Phone → send login OTP
-        from app.schemas.auth import normalize_phone
         phone = normalize_phone(identifier)
-
         result = await db.execute(select(User).where(User.phone_number == phone))
-        user = result.scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account found with this phone number")
 
-        _check_user_status(user)
-
-        otp = generate_otp()
-        _store_otp(phone, otp, str(user.id))
-
-        msg = f"Your TheRoyalSaving login code is {otp}. It expires in 10 minutes. Do not share this code."
-        if WorkerPool.pool:
-            await WorkerPool.pool.enqueue_job("send_termii_sms_task", phone, msg)
-
-        if not settings.is_production:
-            print(f"[DEV] Login OTP for {phone}: {otp}")
-
-        return {
-            "requires_otp": True,
-            "phone_number": phone,
-            "message": "OTP sent to your phone number",
-        }
-
-
-async def verify_login_otp(phone_number: str, otp: str, db: AsyncSession) -> dict:
-    """Verify OTP for phone-based login and return tokens."""
-    from app.schemas.auth import normalize_phone
-    phone = normalize_phone(phone_number)
-
-    _validate_otp(phone, otp)
-
-    result = await db.execute(select(User).where(User.phone_number == phone))
     user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not user or not user.hashed_password or not verify_password(data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+        )
 
     _check_user_status(user)
 
@@ -356,7 +305,6 @@ async def verify_login_otp(phone_number: str, otp: str, db: AsyncSession) -> dic
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         "onboarding_step": user.onboarding_step.value,
-        "requires_otp": False,
     }
 
 
@@ -423,12 +371,11 @@ async def forgot_password(email: str, db: AsyncSession) -> None:
 
     reset_token = create_access_token({"sub": str(user.id), "purpose": "password_reset"}, expire_minutes=30)
 
-    # Note: Using the actual Frontend URL for production links
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
     subject = "Reset your TheRoyalSaving password"
     html_body = f"""
-    <div style="font-family: sans-serif; max-w-xl mx-auto p-6 bg-white rounded shadow text-[#1E0A3C]">
-        <h2 style="color: #D4AF37;">Password Reset Request</h2>
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
+        <h2 style="color: #D4AF37; margin-top: 0;">Password Reset Request</h2>
         <p>We received a request to reset your password. Click the button below to choose a new one:</p>
         <div style="text-align: center; margin: 24px 0;">
             <a href="{reset_url}" style="background-color: #1E0A3C; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">
