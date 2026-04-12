@@ -38,6 +38,8 @@ async def submit_basic_info(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     user = await onboarding_service.submit_basic_info(current_user, data, db)
+    await db.commit()
+    await db.refresh(user)
     return {
         "success": True,
         "data": UserResponse.model_validate(user).model_dump(),
@@ -52,6 +54,8 @@ async def submit_nin(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     user = await onboarding_service.submit_nin(current_user, data, db)
+    await db.commit()
+    await db.refresh(user)
     return {
         "success": True,
         "data": UserResponse.model_validate(user).model_dump(),
@@ -66,6 +70,8 @@ async def submit_bvn(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     user = await onboarding_service.submit_bvn(current_user, data, db)
+    await db.commit()
+    await db.refresh(user)
     return {
         "success": True,
         "data": UserResponse.model_validate(user).model_dump(),
@@ -80,6 +86,8 @@ async def upload_profile_photo(
     file: UploadFile = File(...),
 ):
     user = await onboarding_service.upload_profile_photo(current_user, file, db)
+    await db.commit()
+    await db.refresh(user)
     return {
         "success": True,
         "data": UserResponse.model_validate(user).model_dump(),
