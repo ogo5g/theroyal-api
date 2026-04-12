@@ -118,7 +118,7 @@ async def get_user(
             "status": kyc.status.value if kyc.status else "pending",
             "document_type": kyc.document_type,
             "submitted_at": kyc.submitted_at.isoformat() if kyc.submitted_at else None,
-            "review_notes": kyc.review_notes,
+            "rejection_reason": kyc.rejection_reason,
         }
         
     subs_data = [
