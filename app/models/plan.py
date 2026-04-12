@@ -55,7 +55,8 @@ class SavingsPlan(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     referral_code_validity_weeks: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     downline_qualification_week: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     referral_bonus_type: Mapped[BonusType] = mapped_column(
-        Enum(BonusType, name="bonustype"), default=BonusType.FIXED, nullable=False
+        Enum(BonusType, name="bonustype", values_callable=lambda e: [x.value for x in e]),
+        default=BonusType.FIXED, nullable=False
     )
     referral_bonus_value: Mapped[Decimal] = mapped_column(
         Numeric(15, 2), default=Decimal("0.00"), nullable=False
