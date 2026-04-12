@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = "http://localhost:3000"
 
     # Database
-    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/theroyalsaving"
+    DATABASE_URL: str = "postgresql+asyncpg://user:password@localhost:5432/primeheritagecommunity"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -35,11 +35,11 @@ class Settings(BaseSettings):
 
     # Termii
     TERMII_API_KEY: str = ""
-    TERMII_SENDER_ID: str = "TRSaving"
+    TERMII_SENDER_ID: str = "PrimeHC"
 
     # Resend
     RESEND_API_KEY: str = ""
-    RESEND_FROM_EMAIL: str = "noreply@theroyalsaving.com"
+    RESEND_FROM_EMAIL: str = "noreply@reach.primeheritagecommunity.com"
     
     # SMTP Fallback
     SMTP_HOST: str = "smtp.gmail.com"
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     R2_ACCOUNT_ID: str = ""
     R2_ACCESS_KEY_ID: str = ""
     R2_SECRET_ACCESS_KEY: str = ""
-    R2_BUCKET_NAME: str = "theroyalsaving-kyc"
+    R2_BUCKET_NAME: str = "primeheritagecommunity-kyc"
     R2_ENDPOINT: str = ""
 
     # Cloudinary

@@ -7,7 +7,7 @@ from app.models.user import OnboardingStep, User, UserRole
 from app.utils.security import hash_password
 
 
-ADMIN_EMAIL = "admin@theroyalsaving.com"
+ADMIN_EMAIL = "admin@primeheritagecommunity.com"
 ADMIN_PASSWORD = "Admin@1234"  # Change in production
 
 

@@ -77,7 +77,7 @@ def _validate_otp(identifier: str, otp: str) -> dict:
 
 def _send_email_otp(email: str, otp: str) -> None:
     """Enqueue an email OTP via the worker pool."""
-    subject = "Your TheRoyalSaving Verification Code"
+    subject = "Your Prime Heritage Community Verification Code"
     html_body = f"""
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
         <h2 style="color: #D4AF37; margin-top: 0;">Verification Code</h2>
@@ -136,7 +136,7 @@ async def register_user(data: RegisterRequest, db: AsyncSession) -> User:
     otp = generate_otp()
     _store_otp(email, otp, str(user.id))
 
-    subject = "Your TheRoyalSaving Verification Code"
+    subject = "Your Prime Heritage Community Verification Code"
     html_body = f"""
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
         <h2 style="color: #D4AF37; margin-top: 0;">Verification Code</h2>
@@ -255,7 +255,7 @@ async def resend_otp(identifier: str, db: AsyncSession) -> None:
     otp = generate_otp()
     _store_otp(identifier, otp, str(user.id))
 
-    subject = "Your TheRoyalSaving Verification Code"
+    subject = "Your Prime Heritage Community Verification Code"
     html_body = f"""
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
         <h2 style="color: #D4AF37; margin-top: 0;">Verification Code</h2>
@@ -372,7 +372,7 @@ async def forgot_password(email: str, db: AsyncSession) -> None:
     reset_token = create_access_token({"sub": str(user.id), "purpose": "password_reset"}, expire_minutes=30)
 
     reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
-    subject = "Reset your TheRoyalSaving password"
+    subject = "Reset your Prime Heritage Community password"
     html_body = f"""
     <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
         <h2 style="color: #D4AF37; margin-top: 0;">Password Reset Request</h2>

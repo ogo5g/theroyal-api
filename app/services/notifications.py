@@ -100,7 +100,7 @@ async def notify_registration_success(user_id, email: str, db: AsyncSession):
     """Registration success — in-app."""
     await create_notification(
         user_id=user_id,
-        title="Welcome to TheRoyalSaving!",
+        title="Welcome to Prime Heritage Community!",
         body="Your account has been created successfully. Complete your onboarding to get started.",
         notification_type=NotificationType.SUCCESS,
         channel=NotificationChannel.IN_APP,

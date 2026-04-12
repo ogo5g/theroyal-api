@@ -82,7 +82,7 @@ async def initiate_payout(
             bank_code=kyc.bank_code,
             account_number=account_number,
             account_name=kyc.account_name,
-            narration=f"TheRoyalSaving payout for {sub.sid}",
+            narration=f"PrimeHC payout for {sub.sid}",
             reference=ref,
         )
     except Exception as e:

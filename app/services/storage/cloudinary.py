@@ -19,7 +19,7 @@ if settings.CLOUDINARY_CLOUD_NAME and settings.CLOUDINARY_API_KEY:
     )
 
 
-async def upload_image_to_cloudinary(file: UploadFile, folder: str = "theroyalsaving/profile_photos") -> str:
+async def upload_image_to_cloudinary(file: UploadFile, folder: str = "primeheritagecommunity/profile_photos") -> str:
     """
     Uploads an image file to Cloudinary and returns the secure URL.
     Returns a placeholder URL if Cloudinary is not configured.

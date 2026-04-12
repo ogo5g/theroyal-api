@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="TheRoyalSaving API",
+    title="Prime Heritage Community API",
     description="Premium Nigerian Cooperative Savings Platform",
     version="1.0.0",
     lifespan=lifespan,
@@ -121,4 +121,4 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "service": "theroyalsaving-api"}
+    return {"status": "healthy", "service": "primeheritagecommunity-api"}
