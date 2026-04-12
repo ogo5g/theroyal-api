@@ -85,12 +85,13 @@ async def submit_nin(user: User, data: NINSubmitRequest, db: AsyncSession) -> Us
     if kyc:
         kyc.nin = encrypt_field(data.nin)
     else:
-        from datetime import datetime, timezone
+        from datetime import date as date_type, datetime, timezone
+        dob_str = user.date_of_birth or "2000-01-01"
+        dob = date_type.fromisoformat(dob_str)
         kyc = KYC(
             user_id=user.id,
             nin=encrypt_field(data.nin),
-            # Set required fields with placeholders — updated later or made nullable
-            date_of_birth=user.date_of_birth or "2000-01-01",
+            date_of_birth=dob,
             address=user.address or "",
             state="",
             bank_name="",
