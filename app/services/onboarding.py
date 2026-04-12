@@ -16,6 +16,7 @@ from app.utils.security import encrypt_field
 STEP_ORDER = [
     OnboardingStep.REGISTERED,
     OnboardingStep.EMAIL_VERIFIED,
+    OnboardingStep.PHONE_VERIFIED,
     OnboardingStep.PASSWORD_SET,
     OnboardingStep.BASIC_INFO,
     OnboardingStep.NIN_SUBMITTED,
