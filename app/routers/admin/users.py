@@ -1,9 +1,11 @@
 """Admin — User management."""
 
 import uuid
+from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -196,4 +198,76 @@ async def update_user(
         "success": True,
         "data": {"id": str(user.id), "role": user.role.value, "is_active": user.is_active, "is_suspended": user.is_suspended},
         "message": "User updated.",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Admin Wallet Credit
+# ---------------------------------------------------------------------------
+class CreditWalletRequest(BaseModel):
+    amount: float = Field(..., gt=0, description="Amount to credit in Naira")
+    description: str = Field(..., min_length=3, max_length=500, description="Reason for the credit")
+
+
+@router.post("/{user_id}/credit-wallet")
+async def credit_user_wallet(
+    user_id: uuid.UUID,
+    data: CreditWalletRequest,
+    admin: Annotated[User, Depends(admin_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    request: Request = None,
+):
+    """Admin manually credits a user's wallet. Creates a transaction and audit log."""
+    from app.models.account import Account
+    from app.models.wallet import TransactionCategory
+    from app.services.wallet import credit_wallet
+
+    # Verify user exists
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Verify user has an account
+    acc_result = await db.execute(select(Account).where(Account.user_id == user_id))
+    account = acc_result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(status_code=404, detail="User has no wallet account")
+
+    amount = Decimal(str(data.amount))
+    reference = f"ADMIN-CREDIT-{uuid.uuid4().hex[:12].upper()}"
+
+    txn = await credit_wallet(
+        user_id=user_id,
+        amount=amount,
+        category=TransactionCategory.WALLET_FUNDING,
+        reference=reference,
+        description=f"Admin credit: {data.description}",
+        db=db,
+        metadata={"admin_id": str(admin.id), "reason": data.description},
+    )
+
+    await audit_service.log_action(
+        actor_id=admin.id,
+        action="wallet.admin_credit",
+        target_type="User",
+        target_id=user_id,
+        db=db,
+        metadata={"amount": float(amount), "reference": reference, "description": data.description},
+        request=request,
+    )
+
+    await db.commit()
+
+    # Refresh to get updated balance
+    await db.refresh(account)
+
+    return {
+        "success": True,
+        "data": {
+            "wallet_balance": float(account.wallet_balance),
+            "transaction_id": str(txn.id),
+            "reference": reference,
+        },
+        "message": f"₦{amount:,.2f} credited to user wallet.",
     }
