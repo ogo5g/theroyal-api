@@ -49,7 +49,7 @@ async def create_subscription(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    if not account.wallet_activated:
+    if not account.wallet_activated and not account.wallet_bypass:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Please activate your wallet first",

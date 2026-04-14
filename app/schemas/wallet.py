@@ -12,6 +12,7 @@ class WalletResponse(BaseModel):
     total_saved: Decimal
     total_withdrawn: Decimal
     wallet_activated: bool
+    wallet_bypass: bool
     virtual_account_number: str | None = None
     virtual_account_bank: str | None = None
 

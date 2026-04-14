@@ -77,7 +77,7 @@ async def get_virtual_account(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     account = await wallet_service.get_wallet(current_user, db)
-    if not account.wallet_activated:
+    if not account.wallet_activated and not account.wallet_bypass:
         return {
             "success": False,
             "error": "wallet_not_activated",

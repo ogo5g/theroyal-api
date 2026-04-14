@@ -29,6 +29,7 @@ class Account(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     virtual_account_bank: Mapped[str | None] = mapped_column(String(100), nullable=True)
     virtual_account_reference: Mapped[str | None] = mapped_column(String(100), nullable=True)
     wallet_activated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    wallet_bypass: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="account")

@@ -25,6 +25,9 @@ class UserResponse(BaseModel):
     is_suspended: bool
     created_at: datetime
     updated_at: datetime
+    has_bank_account: bool | None = None
+    has_proof_of_address: bool | None = None
+    kyc_status: str | None = None
 
     model_config = {"from_attributes": True}
 

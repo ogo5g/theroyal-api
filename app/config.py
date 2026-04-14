@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     PLATNOVA_WEBHOOK_SECRET: str = ""
     PLATNOVA_BASE_URL: str = "https://api.platnova.co"
 
+    # Paystack (For bank list and resolution)
+    PAYSTACK_SECRET_KEY: str = ""
+
     # Termii
     TERMII_API_KEY: str = ""
     TERMII_SENDER_ID: str = "PrimeHC"

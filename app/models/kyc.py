@@ -49,6 +49,7 @@ class KYC(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     document_type: Mapped[DocumentType] = mapped_column(Enum(DocumentType), nullable=False)
     document_url: Mapped[str] = mapped_column(Text, nullable=False)
     selfie_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proof_of_address_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Review
     status: Mapped[KYCStatus] = mapped_column(

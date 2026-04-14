@@ -202,8 +202,66 @@ async def update_user(
 
 
 # ---------------------------------------------------------------------------
-# Admin Wallet Credit
+# Admin Wallet Credit & Bypass
 # ---------------------------------------------------------------------------
+
+class ToggleBypassRequest(BaseModel):
+    wallet_bypass: bool = Field(..., description="Whether to bypass wallet activation check")
+
+@router.post("/{user_id}/toggle-wallet-bypass")
+async def toggle_wallet_bypass(
+    user_id: uuid.UUID,
+    data: ToggleBypassRequest,
+    admin: Annotated[User, Depends(admin_dep)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    request: Request = None,
+):
+    # 1. Get user and account
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    acct_result = await db.execute(
+        select(Account).where(Account.user_id == user_id)
+    )
+    account = acct_result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(status_code=404, detail="User account not found")
+
+    # 2. Update bypass flag
+    old_status = account.wallet_bypass
+    account.wallet_bypass = data.wallet_bypass
+
+    # 3. Audit log
+    ip_address = request.client.host if request else None
+    action = "enabled" if data.wallet_bypass else "disabled"
+    await audit_service.log_action(
+        db=db,
+        admin_id=admin.id,
+        action="wallet.bypass_toggled",
+        entity_type="account",
+        entity_id=account.id,
+        details={
+            "user_id": str(user.id),
+            "user_email": user.email,
+            "old_status": old_status,
+            "new_status": data.wallet_bypass,
+            "reason": f"Admin manually {action} wallet activation bypass.",
+        },
+        ip_address=ip_address,
+    )
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "data": {"wallet_bypass": account.wallet_bypass},
+        "message": f"Wallet activation bypass {action} successfully.",
+    }
+
 class CreditWalletRequest(BaseModel):
     amount: float = Field(..., gt=0, description="Amount to credit in Naira")
     description: str = Field(..., min_length=3, max_length=500, description="Reason for the credit")
