@@ -237,22 +237,21 @@ async def toggle_wallet_bypass(
     account.wallet_bypass = data.wallet_bypass
 
     # 3. Audit log
-    ip_address = request.client.host if request else None
     action = "enabled" if data.wallet_bypass else "disabled"
     await audit_service.log_action(
-        db=db,
-        admin_id=admin.id,
+        actor_id=admin.id,
         action="wallet.bypass_toggled",
-        entity_type="account",
-        entity_id=account.id,
-        details={
+        target_type="account",
+        target_id=account.id,
+        db=db,
+        metadata={
             "user_id": str(user.id),
             "user_email": user.email,
             "old_status": old_status,
             "new_status": data.wallet_bypass,
             "reason": f"Admin manually {action} wallet activation bypass.",
         },
-        ip_address=ip_address,
+        request=request,
     )
 
     await db.commit()
