@@ -11,7 +11,7 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.kyc import KYC
 from app.models.user import User
-from app.utils.storage import upload_file
+from app.services.storage.cloudinary import upload_image_to_cloudinary
 
 router = APIRouter(prefix="/kyc", tags=["KYC (User)"])
 
@@ -76,7 +76,7 @@ async def upload_proof_of_address(
             detail="KYC record not found. Please complete the basic onboarding first."
         )
 
-    url = await upload_file(file, folder="proof_of_address")
+    url = await upload_image_to_cloudinary(file, folder="primeheritagecommunity/proof_of_address")
     kyc.proof_of_address_url = url
 
     await db.commit()
