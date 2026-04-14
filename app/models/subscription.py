@@ -73,20 +73,20 @@ class Subscription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     # Relationships
     user = relationship("User", back_populates="subscriptions")
-    plan = relationship("SavingsPlan", back_populates="subscriptions")
+    plan = relationship("SavingsPlan", back_populates="subscriptions", lazy="selectin")
     schedule = relationship("PaymentSchedule", back_populates="subscription", lazy="selectin")
     upline = relationship(
         "Subscription",
         remote_side="Subscription.id",
         back_populates="downlines",
         foreign_keys=[upline_subscription_id],
-        lazy="selectin",
+        lazy="noload",
     )
     downlines = relationship(
         "Subscription",
         back_populates="upline",
         foreign_keys=[upline_subscription_id],
-        lazy="selectin",
+        lazy="noload",
     )
 
 
