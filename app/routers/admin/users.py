@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.dependencies import require_role
 from app.models.user import User, UserRole
+from app.models.account import Account
 from app.services import audit as audit_service
 
 router = APIRouter(prefix="/users", tags=["Admin — Users"])
