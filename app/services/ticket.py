@@ -107,26 +107,49 @@ async def add_ticket_message(
 # ---------------------------------------------------------------------------
 
 async def admin_list_tickets(
-    db: AsyncSession, 
-    page: int = 1, 
-    per_page: int = 20, 
-    ticket_status: str | None = None
+    db: AsyncSession,
+    page: int = 1,
+    per_page: int = 20,
+    ticket_status: str | None = None,
+    search: str | None = None,
 ) -> dict:
-    """Admin lists all tickets with pagination and optional status filter."""
+    """Admin lists all tickets with pagination, optional status filter, and search."""
+    from sqlalchemy import or_, ilike
+    from app.models.user import User
+
     query = select(Ticket).options(selectinload(Ticket.user))
     count_query = select(func.count()).select_from(Ticket)
-    
+
     if ticket_status:
         query = query.where(Ticket.status == ticket_status)
         count_query = count_query.where(Ticket.status == ticket_status)
-        
+
+    if search:
+        search_term = f"%{search}%"
+        query = query.join(User, Ticket.user_id == User.id).where(
+            or_(
+                Ticket.subject.ilike(search_term),
+                User.email.ilike(search_term),
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+            )
+        )
+        count_query = count_query.join(User, Ticket.user_id == User.id).where(
+            or_(
+                Ticket.subject.ilike(search_term),
+                User.email.ilike(search_term),
+                User.first_name.ilike(search_term),
+                User.last_name.ilike(search_term),
+            )
+        )
+
     total_result = await db.execute(count_query)
     total = total_result.scalar()
-    
+
     query = query.order_by(Ticket.created_at.desc()).offset((page - 1) * per_page).limit(per_page)
     result = await db.execute(query)
     tickets = result.scalars().all()
-    
+
     return {
         "items": tickets,
         "total": total,
@@ -134,6 +157,55 @@ async def admin_list_tickets(
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page if total else 0,
     }
+
+
+async def get_open_ticket_count(db: AsyncSession) -> int:
+    """Get count of open tickets (for sidebar badge)."""
+    result = await db.execute(
+        select(func.count()).select_from(Ticket).where(Ticket.status == TicketStatus.OPEN)
+    )
+    return result.scalar() or 0
+
+
+async def admin_create_ticket(
+    admin_id: uuid.UUID,
+    user_id: uuid.UUID,
+    data: TicketCreate,
+    db: AsyncSession,
+) -> Ticket:
+    """Admin opens a ticket on behalf of a user."""
+    ticket = Ticket(
+        user_id=user_id,
+        subject=data.subject,
+        description=data.description,
+        priority=data.priority,
+        status=TicketStatus.OPEN,
+    )
+    db.add(ticket)
+    await db.flush()
+
+    # First message is the admin's opening note (visible in the thread)
+    opening_msg = TicketMessage(
+        ticket_id=ticket.id,
+        sender_id=admin_id,
+        body=data.description,
+        is_admin=True,
+    )
+    db.add(opening_msg)
+
+    await db.commit()
+    await db.refresh(ticket)
+
+    await notify_service.create_notification(
+        user_id=user_id,
+        title="Support Ticket Opened",
+        body=f"A support ticket '{ticket.subject}' has been opened on your behalf. Check your tickets for details.",
+        notification_type=notify_service.NotificationType.INFO,
+        channel=notify_service.NotificationChannel.IN_APP,
+        db=db,
+    )
+
+    return ticket
 
 
 async def admin_update_ticket_status(ticket_id: uuid.UUID, data: TicketUpdateStatus, db: AsyncSession) -> Ticket:
