@@ -16,7 +16,7 @@ from app.models.wallet import WalletTransaction, TransactionCategory
 from app.services import audit as audit_service
 
 router = APIRouter(tags=["Admin — Dashboard"])
-admin_dep = require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+admin_dep = require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
 
 
 @router.get("/dashboard/stats")

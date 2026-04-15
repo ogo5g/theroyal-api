@@ -70,6 +70,7 @@ class Subscription(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     commission_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     penalty_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     auto_debit_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    clearance_submitted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="subscriptions")

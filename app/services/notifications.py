@@ -216,3 +216,27 @@ async def notify_payout_processed(user_id, sid: str, amount, db: AsyncSession):
         channel=NotificationChannel.IN_APP,
         db=db,
     )
+
+
+async def notify_clearance_submitted(user_id, sid: str, db: AsyncSession):
+    """Clearance submitted — in-app."""
+    await create_notification(
+        user_id=user_id,
+        title="Clearance Submitted",
+        body=f"Your clearance request for subscription {sid} has been submitted and is pending admin review.",
+        notification_type=NotificationType.INFO,
+        channel=NotificationChannel.IN_APP,
+        db=db,
+    )
+
+
+async def notify_clearance_rejected(user_id, sid: str, reason: str, db: AsyncSession):
+    """Clearance rejected — in-app."""
+    await create_notification(
+        user_id=user_id,
+        title="Clearance Request Rejected",
+        body=f"Your clearance request for subscription {sid} was rejected. Reason: {reason}. You may resubmit after resolving the issue.",
+        notification_type=NotificationType.ACTION_REQUIRED,
+        channel=NotificationChannel.IN_APP,
+        db=db,
+    )

@@ -16,7 +16,7 @@ from app.models.wallet import WalletTransaction
 from app.schemas.subscription import ScheduleItemResponse, SubscriptionResponse
 
 router = APIRouter(prefix="/subscriptions", tags=["Admin — Subscriptions"])
-admin_dep = require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+admin_dep = require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MODERATOR, UserRole.STAFF)
 
 
 @router.get("")

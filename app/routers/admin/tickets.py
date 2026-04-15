@@ -14,7 +14,7 @@ from app.services import ticket as ticket_service
 from app.services import audit as audit_service
 
 router = APIRouter(prefix="/tickets", tags=["Admin — Support Tickets"])
-admin_dep = require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN)
+admin_dep = require_role(UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.MODERATOR)
 
 
 @router.get("")

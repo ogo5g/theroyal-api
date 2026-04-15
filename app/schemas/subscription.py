@@ -36,6 +36,7 @@ class SubscriptionResponse(BaseModel):
     is_referral_code_active: bool = False
     commission_paid: bool
     penalty_count: int
+    clearance_submitted: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

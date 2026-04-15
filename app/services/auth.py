@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import re
+import secrets
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -9,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models.account import Account
-from app.models.user import OnboardingStep, User
+from app.models.user import OnboardingStep, User, UserRole
 from app.schemas.auth import (
     LoginRequest,
     RegisterRequest,
@@ -407,3 +408,64 @@ async def reset_password(token: str, new_password: str, db: AsyncSession) -> Non
 
     user.hashed_password = hash_password(new_password)
     await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Staff user creation (admin only)
+# ---------------------------------------------------------------------------
+async def create_staff_user(
+    email: str,
+    first_name: str,
+    last_name: str,
+    phone_number: str | None,
+    role: UserRole,
+    db: AsyncSession,
+) -> User:
+    """Create a staff/admin/moderator user with a random password and send welcome email."""
+    result = await db.execute(select(User).where(User.email == email))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists.",
+        )
+
+    temp_password = secrets.token_urlsafe(16)
+    user = User(
+        email=email,
+        first_name=first_name,
+        last_name=last_name,
+        phone_number=phone_number,
+        role=role,
+        hashed_password=hash_password(temp_password),
+        is_verified=True,
+        is_active=True,
+        onboarding_step=OnboardingStep.COMPLETED,
+    )
+    db.add(user)
+    await db.flush()
+
+    account = Account(user_id=user.id)
+    db.add(account)
+
+    role_label = role.value.replace("_", " ").title()
+    subject = "Welcome to Prime Heritage Community"
+    html_body = f"""
+    <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.1); color: #1E0A3C;">
+        <h2 style="color: #D4AF37; margin-top: 0;">Welcome, {first_name}!</h2>
+        <p>You have been added as a <strong>{role_label}</strong> on Prime Heritage Community.</p>
+        <p>Login at <a href="{settings.FRONTEND_URL}/admin/login" style="color: #D4AF37;">{settings.FRONTEND_URL}/admin/login</a> with your email:</p>
+        <p style="font-size: 18px; font-weight: bold; padding: 12px; background: #f3f4f6; text-align: center; border-radius: 8px;">
+            {email}
+        </p>
+        <p>Use <strong>Forgot Password</strong> on the login page to set your own password before your first login.</p>
+        <p style="color: #888; font-size: 12px;">If you did not expect this email, please contact support.</p>
+    </div>
+    """
+
+    if WorkerPool.pool:
+        await WorkerPool.pool.enqueue_job("send_resend_email_task", email, subject, html_body)
+
+    if not settings.is_production:
+        print(f"[DEV] Staff created: {email} / temp password: {temp_password}")
+
+    return user

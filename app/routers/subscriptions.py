@@ -18,6 +18,8 @@ from app.schemas.subscription import (
     SubscriptionResponse,
 )
 from app.services import subscriptions as sub_service
+from app.services import clearance as clearance_service
+from app.services import notifications as notif_service
 
 router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
 
@@ -154,6 +156,23 @@ async def pay_installment(
             "amount": str(schedule.amount),
         },
         "message": f"Week {schedule.week_number} installment paid successfully.",
+    }
+
+
+@router.post("/{sid}/submit-clearance")
+async def submit_clearance(
+    sid: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Member submits their completed subscription for clearance review."""
+    sub = await clearance_service.submit_for_clearance(sid, current_user, db, admin_mode=False)
+    await notif_service.notify_clearance_submitted(current_user.id, sid, db)
+    await db.commit()
+    return {
+        "success": True,
+        "data": {"sid": sid},
+        "message": "Clearance submitted successfully. Pending admin review.",
     }
 
 

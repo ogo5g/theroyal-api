@@ -17,6 +17,44 @@ from app.utils.security import decrypt_field
 
 
 # ---------------------------------------------------------------------------
+# Submit for clearance
+# ---------------------------------------------------------------------------
+async def submit_for_clearance(
+    sid: str,
+    user,
+    db: AsyncSession,
+    admin_mode: bool = False,
+) -> Subscription:
+    """Mark a COMPLETED subscription as submitted for clearance review."""
+    result = await db.execute(select(Subscription).where(Subscription.sid == sid))
+    sub = result.scalar_one_or_none()
+
+    if not sub:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription not found")
+
+    if sub.status != SubscriptionStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only COMPLETED subscriptions can be submitted for clearance.",
+        )
+
+    if sub.clearance_submitted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Clearance has already been submitted for this subscription.",
+        )
+
+    if not admin_mode and str(sub.user_id) != str(user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only submit clearance for your own subscription.",
+        )
+
+    sub.clearance_submitted = True
+    return sub
+
+
+# ---------------------------------------------------------------------------
 # Check completion
 # ---------------------------------------------------------------------------
 async def check_subscription_completed(sub: Subscription, db: AsyncSession) -> bool:
@@ -61,6 +99,12 @@ async def initiate_payout(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Subscription must be COMPLETED to initiate payout. Current: {sub.status.value}",
+        )
+
+    if not sub.clearance_submitted:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Clearance must be submitted before approval.",
         )
 
     # Load plan for clearance fee and referral requirements
