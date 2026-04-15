@@ -90,6 +90,7 @@ app.include_router(webhooks.router, prefix=api_prefix)
 app.include_router(notifications.router, prefix=api_prefix)
 app.include_router(bank.router, prefix=api_prefix)
 app.include_router(kyc_user.router, prefix=api_prefix)
+app.include_router(tickets.router, prefix=api_prefix)
 app.include_router(admin_router, prefix=api_prefix)
 
 
