@@ -114,7 +114,7 @@ async def admin_list_tickets(
     search: str | None = None,
 ) -> dict:
     """Admin lists all tickets with pagination, optional status filter, and search."""
-    from sqlalchemy import or_, ilike
+    from sqlalchemy import or_
     from app.models.user import User
 
     query = select(Ticket).options(selectinload(Ticket.user))
@@ -142,6 +142,7 @@ async def admin_list_tickets(
                 User.last_name.ilike(search_term),
             )
         )
+
 
     total_result = await db.execute(count_query)
     total = total_result.scalar()
