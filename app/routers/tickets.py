@@ -52,9 +52,16 @@ async def list_my_tickets(
 ):
     """List all tickets created by the user."""
     results = await ticket_service.user_list_tickets(user.id, db, page=page, per_page=per_page)
-    results["items"] = [TicketResponse.model_validate(t).model_dump() for t in results["items"]]
-    results["success"] = True
-    return results
+    return {
+        "success": True,
+        "data": [TicketResponse.model_validate(t).model_dump() for t in results["items"]],
+        "pagination": {
+            "page": results["page"],
+            "per_page": results["per_page"],
+            "total": results["total"],
+            "pages": results["pages"],
+        },
+    }
 
 
 @router.get("/{ticket_id}")
