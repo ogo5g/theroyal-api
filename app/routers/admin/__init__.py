@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.routers.admin import clearance, kyc, plans, staff, stats, subscriptions, users, tickets
+from app.routers.admin import clearance, kyc, payouts, plans, staff, stats, subscriptions, users, tickets
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -14,4 +14,5 @@ router.include_router(clearance.router)
 router.include_router(staff.router)
 router.include_router(stats.router)
 router.include_router(tickets.router)
+router.include_router(payouts.router)
 
