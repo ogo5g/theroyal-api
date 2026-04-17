@@ -21,6 +21,222 @@ from app.utils.codes import generate_payment_reference
 
 
 # ---------------------------------------------------------------------------
+# Validate Referral Codes (batch)
+# ---------------------------------------------------------------------------
+async def validate_referral_codes(
+    codes: list[str],
+    db: AsyncSession,
+) -> list[dict]:
+    """Batch-validate a list of referral codes. Returns validation results."""
+    if not codes:
+        return []
+
+    today = date.today()
+
+    # Fetch all matching subscriptions in one query
+    result = await db.execute(
+        select(Subscription).where(
+            Subscription.referral_code.in_(codes),
+            Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.COMPLETED]),
+        )
+    )
+    found: dict[str, Subscription] = {s.referral_code: s for s in result.scalars().all()}
+
+    results = []
+    for code in codes:
+        sub = found.get(code)
+        if not sub:
+            results.append({"code": code, "valid": False, "error": "Referral code not found or inactive"})
+            continue
+        if sub.referral_code_available_at and today < sub.referral_code_available_at:
+            results.append({"code": code, "valid": False, "error": "Referral code is not yet active"})
+            continue
+        if sub.referral_code_expires_at and today > sub.referral_code_expires_at:
+            results.append({"code": code, "valid": False, "error": "Referral code has expired"})
+            continue
+        results.append({"code": code, "valid": True, "error": None})
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Create Batch Subscriptions
+# ---------------------------------------------------------------------------
+async def create_batch_subscriptions(
+    user,
+    plan_code: str,
+    quantity: int,
+    referral_codes: list[str],
+    db: AsyncSession,
+) -> dict:
+    """Create N subscriptions atomically including first installment payment."""
+    today = date.today()
+
+    # 1. Lock plan row to prevent race conditions on subscriber count
+    plan_result = await db.execute(
+        select(SavingsPlan).where(SavingsPlan.code == plan_code).with_for_update()
+    )
+    plan = plan_result.scalar_one_or_none()
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+    if plan.status != PlanStatus.ACTIVE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Plan is not active")
+    if plan.max_subscribers and (plan.current_subscribers + quantity) > plan.max_subscribers:
+        spots_left = plan.max_subscribers - plan.current_subscribers
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Plan only has {spots_left} spot(s) left. Requested: {quantity}",
+        )
+
+    # 2. Lock account row to prevent balance race conditions
+    acct_result = await db.execute(
+        select(Account).where(Account.user_id == user.id).with_for_update()
+    )
+    account = acct_result.scalar_one_or_none()
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    if not account.wallet_activated and not account.wallet_bypass:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please activate your wallet first",
+        )
+    if account.wallet_balance < plan.minimum_wallet_balance:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Minimum wallet balance of ₦{plan.minimum_wallet_balance:,.2f} required. "
+                   f"Your balance: ₦{account.wallet_balance:,.2f}",
+        )
+
+    # 3. Pre-validate all referral codes before any mutation
+    # Pad or trim codes list to match quantity
+    padded_codes: list[str | None] = list(referral_codes[:quantity])
+    while len(padded_codes) < quantity:
+        padded_codes.append(None)
+
+    non_null_codes = [c for c in padded_codes if c]
+    upline_map: dict[str, Subscription | None] = {}
+
+    if non_null_codes:
+        ref_result = await db.execute(
+            select(Subscription).where(
+                Subscription.referral_code.in_(non_null_codes),
+                Subscription.status.in_([SubscriptionStatus.ACTIVE, SubscriptionStatus.COMPLETED]),
+            )
+        )
+        found_subs: dict[str, Subscription] = {s.referral_code: s for s in ref_result.scalars().all()}
+
+        for code in non_null_codes:
+            sub = found_subs.get(code)
+            if not sub:
+                upline_map[code] = None  # invalid but we won't error, just skip
+                continue
+            if sub.referral_code_available_at and today < sub.referral_code_available_at:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Referral code '{code}' is not yet active",
+                )
+            if sub.referral_code_expires_at and today > sub.referral_code_expires_at:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Referral code '{code}' has expired",
+                )
+            upline_map[code] = sub
+
+    # 4. Debit wallet — two transactions: registration fees + first installments
+    total_reg = plan.registration_fee * quantity
+    total_installment = plan.weekly_amount * quantity
+
+    reg_ref = generate_payment_reference()
+    await wallet_service.debit_wallet(
+        user_id=user.id,
+        amount=total_reg,
+        category=TransactionCategory.REGISTRATION_FEE,
+        reference=reg_ref,
+        description=f"Registration fee for {quantity}x {plan.name} (₦{plan.registration_fee:,.2f} each)",
+        db=db,
+    )
+
+    inst_ref = generate_payment_reference()
+    installment_txn = await wallet_service.debit_wallet(
+        user_id=user.id,
+        amount=total_installment,
+        category=TransactionCategory.PLAN_INSTALLMENT,
+        reference=inst_ref,
+        description=f"First installment for {quantity}x {plan.name} (₦{plan.weekly_amount:,.2f} each)",
+        db=db,
+    )
+
+    # 5. Calculate shared date/amount values (all subs share the same start date)
+    start_date = today + timedelta(days=(7 - today.weekday()) % 7 or 7)  # Next Monday
+    end_date = start_date + timedelta(weeks=plan.duration_weeks)
+    total_expected = plan.weekly_amount * plan.duration_weeks
+    settlement_amount = total_expected * (1 + plan.return_rate / 100)
+    referral_code_available_at = start_date + timedelta(weeks=plan.referral_code_release_week - 1)
+    referral_code_expires_at = referral_code_available_at + timedelta(weeks=plan.referral_code_validity_weeks)
+
+    # Week 2 due date for next_due_date
+    week2_date = start_date + timedelta(weeks=1) if plan.duration_weeks > 1 else None
+
+    # 6. Create N subscriptions
+    created_subs = []
+    for i in range(quantity):
+        ref_code = padded_codes[i]
+        upline_sub = upline_map.get(ref_code) if ref_code else None
+
+        sub = Subscription(
+            user_id=user.id,
+            plan_id=plan.id,
+            status=SubscriptionStatus.ACTIVE,
+            weekly_amount=plan.weekly_amount,
+            total_expected=total_expected,
+            settlement_amount=settlement_amount,
+            start_date=start_date,
+            end_date=end_date,
+            next_due_date=week2_date,
+            referral_code_available_at=referral_code_available_at,
+            referral_code_expires_at=referral_code_expires_at,
+            referred_by_code=ref_code,
+            upline_subscription_id=upline_sub.id if upline_sub else None,
+            commission_paid=True,
+            # First week already paid
+            total_paid=plan.weekly_amount,
+            weeks_paid=1,
+            current_streak=1,
+            longest_streak=1,
+            last_payment_date=today,
+        )
+        db.add(sub)
+        await db.flush()  # Get sub.id for schedule FK
+
+        # Generate payment schedule
+        for week in range(1, plan.duration_weeks + 1):
+            due = start_date + timedelta(weeks=week - 1)
+            schedule = PaymentSchedule(
+                subscription_id=sub.id,
+                week_number=week,
+                due_date=due,
+                amount=plan.weekly_amount,
+            )
+            if week == 1:
+                schedule.status = ScheduleStatus.PAID
+                schedule.paid_at = datetime.now(timezone.utc)
+                schedule.transaction_id = installment_txn.id
+            db.add(schedule)
+
+        created_subs.append(sub)
+
+    # 7. Increment subscriber count
+    plan.current_subscribers += quantity
+
+    total_debited = total_reg + total_installment
+    return {
+        "subscriptions": created_subs,
+        "total_debited": total_debited,
+        "quantity": quantity,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Create Subscription
 # ---------------------------------------------------------------------------
 async def create_subscription(

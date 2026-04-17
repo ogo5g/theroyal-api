@@ -4,12 +4,28 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SubscribeRequest(BaseModel):
     plan_code: str
     referral_code: str | None = None
+
+
+class BatchSubscribeRequest(BaseModel):
+    plan_code: str
+    quantity: int = Field(ge=1, le=10)
+    referral_codes: list[str] = []
+
+
+class ValidateReferralCodesRequest(BaseModel):
+    referral_codes: list[str]
+
+
+class ReferralCodeValidationResult(BaseModel):
+    code: str
+    valid: bool
+    error: str | None = None
 
 
 class SubscriptionResponse(BaseModel):

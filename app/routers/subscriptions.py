@@ -12,10 +12,12 @@ from app.dependencies import get_current_user
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User
 from app.schemas.subscription import (
+    BatchSubscribeRequest,
     DownlineStatusResponse,
     ReferralInfoResponse,
     ScheduleItemResponse,
     SubscriptionResponse,
+    ValidateReferralCodesRequest,
 )
 from app.services import subscriptions as sub_service
 from app.services import clearance as clearance_service
@@ -55,6 +57,48 @@ async def list_subscriptions(
         "success": True,
         "data": [_sub_to_response(s) for s in subs],
         "message": f"{len(subs)} subscription(s) found.",
+    }
+
+
+@router.post("/batch")
+async def create_batch_subscription(
+    data: BatchSubscribeRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Create N subscriptions atomically. First installment included in debit."""
+    result = await sub_service.create_batch_subscriptions(
+        user=current_user,
+        plan_code=data.plan_code,
+        quantity=data.quantity,
+        referral_codes=data.referral_codes,
+        db=db,
+    )
+    await db.commit()
+    for sub in result["subscriptions"]:
+        await db.refresh(sub)
+    return {
+        "success": True,
+        "data": {
+            "subscriptions": [_sub_to_response(s) for s in result["subscriptions"]],
+            "total_debited": str(result["total_debited"]),
+            "quantity": result["quantity"],
+        },
+        "message": f"{result['quantity']} subscription(s) created successfully. First installment(s) paid.",
+    }
+
+
+@router.post("/validate-referral-codes")
+async def validate_referral_codes_endpoint(
+    data: ValidateReferralCodesRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Validate a list of referral codes. Returns per-code validation results."""
+    results = await sub_service.validate_referral_codes(data.referral_codes, db)
+    return {
+        "success": True,
+        "data": results,
     }
 
 
